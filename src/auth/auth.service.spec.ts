@@ -126,5 +126,31 @@ describe('AuthService', () => {
         'Invalid refresh token',
       );
     });
+
+    it('detects reuse of a revoked token and revokes ALL of that user\'s sessions', async () => {
+      const { refreshToken: sessionA } = await authService.register({
+        email: 'erin@example.com',
+        password: 'password123',
+        displayName: 'Erin',
+      });
+      // second session for the same user
+      const { refreshToken: sessionB } = await authService.login({
+        email: 'erin@example.com',
+        password: 'password123',
+      });
+
+      // rotate session A once — the original sessionA token is now revoked
+      await authService.refresh(sessionA);
+
+      // reuse the already-revoked original sessionA token
+      await expect(authService.refresh(sessionA)).rejects.toThrow(
+        'Session revoked — please log in again',
+      );
+
+      // sessionB, which was never reused, must now ALSO be revoked
+      await expect(authService.refresh(sessionB)).rejects.toThrow(
+        'Session revoked — please log in again',
+      );
+    });
   });
 });
