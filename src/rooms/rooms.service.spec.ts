@@ -115,4 +115,50 @@ describe('RoomsService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
   });
+
+  describe('getMessages', () => {
+    async function seedMessages(roomId: string, senderId: string, count: number) {
+      const messages = [];
+      for (let i = 0; i < count; i++) {
+        const message = await prisma.message.create({
+          data: {
+            roomId,
+            senderId,
+            content: `message-${i}`,
+            createdAt: new Date(Date.now() + i * 1000), // strictly increasing
+          },
+        });
+        messages.push(message);
+      }
+      return messages;
+    }
+
+    it('throws ForbiddenException when the caller is not a member', async () => {
+      const owner = await createUser('msgowner@example.com');
+      const outsider = await createUser('msgoutsider@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'Secret' });
+
+      await expect(roomsService.getMessages(outsider.id, room.id)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('paginates in newest-first pages but returns each page oldest-to-newest, with a nextCursor while more remain', async () => {
+      const user = await createUser('paginator@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'Paged' });
+      await seedMessages(room.id, user.id, 5); // oldest..newest
+
+      const page1 = await roomsService.getMessages(user.id, room.id, undefined, 2);
+      expect(page1.items.map((m) => m.content)).toEqual(['message-3', 'message-4']);
+      expect(page1.nextCursor).not.toBeNull();
+
+      const page2 = await roomsService.getMessages(user.id, room.id, page1.nextCursor!, 2);
+      expect(page2.items.map((m) => m.content)).toEqual(['message-1', 'message-2']);
+      expect(page2.nextCursor).not.toBeNull();
+
+      const page3 = await roomsService.getMessages(user.id, room.id, page2.nextCursor!, 2);
+      expect(page3.items.map((m) => m.content)).toEqual(['message-0']);
+      expect(page3.nextCursor).toBeNull();
+    });
+  });
 });

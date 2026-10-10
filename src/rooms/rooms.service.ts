@@ -54,4 +54,41 @@ export class RoomsService {
       data: { roomId, senderId: userId, content: dto.content },
     });
   }
+
+  async getMessages(
+    userId: string,
+    roomId: string,
+    cursor?: string,
+    limit = 20,
+  ): Promise<{ items: Message[]; nextCursor: string | null }> {
+    await this.assertMember(userId, roomId);
+
+    const where: {
+      roomId: string;
+      OR?: Array<{ createdAt: { lt: Date } } | { createdAt: Date; id: { lt: string } }>;
+    } = { roomId };
+
+    if (cursor) {
+      const separatorIndex = cursor.lastIndexOf('|');
+      const cursorCreatedAt = new Date(cursor.slice(0, separatorIndex));
+      const cursorId = cursor.slice(separatorIndex + 1);
+      where.OR = [
+        { createdAt: { lt: cursorCreatedAt } },
+        { createdAt: cursorCreatedAt, id: { lt: cursorId } },
+      ];
+    }
+
+    const rows = await this.prisma.message.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+    });
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+    const nextCursor = hasMore ? `${last.createdAt.toISOString()}|${last.id}` : null;
+
+    return { items: page.reverse(), nextCursor };
+  }
 }
