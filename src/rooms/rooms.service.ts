@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Room, RoomMember } from '@prisma/client';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Message, Room, RoomMember } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRoomDto } from './dto/create-room.dto';
+import { SendMessageDto } from './dto/send-message.dto';
 
 @Injectable()
 export class RoomsService {
@@ -36,5 +37,21 @@ export class RoomsService {
       include: { room: true },
     });
     return memberships.map((m) => m.room);
+  }
+
+  private async assertMember(userId: string, roomId: string): Promise<void> {
+    const membership = await this.prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId } },
+    });
+    if (!membership) {
+      throw new ForbiddenException('Not a member of this room');
+    }
+  }
+
+  async sendMessage(userId: string, roomId: string, dto: SendMessageDto): Promise<Message> {
+    await this.assertMember(userId, roomId);
+    return this.prisma.message.create({
+      data: { roomId, senderId: userId, content: dto.content },
+    });
   }
 }

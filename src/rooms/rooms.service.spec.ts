@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { cleanDatabase } from '../../test/db-cleanup';
@@ -90,6 +90,29 @@ describe('RoomsService', () => {
       const rooms = await roomsService.listRooms(user.id);
 
       expect(rooms.map((r) => r.id)).toEqual([roomA.id]);
+    });
+  });
+
+  describe('sendMessage', () => {
+    it('creates a message when the sender is a room member', async () => {
+      const user = await createUser('sender@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'Chat' });
+
+      const message = await roomsService.sendMessage(user.id, room.id, { content: 'hello' });
+
+      expect(message.content).toBe('hello');
+      expect(message.senderId).toBe(user.id);
+      expect(message.roomId).toBe(room.id);
+    });
+
+    it('throws ForbiddenException when the sender is not a room member', async () => {
+      const owner = await createUser('owner4@example.com');
+      const outsider = await createUser('outsider2@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'Private' });
+
+      await expect(
+        roomsService.sendMessage(outsider.id, room.id, { content: 'intruder' }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });
