@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { cleanDatabase } from '../../test/db-cleanup';
@@ -62,6 +62,38 @@ describe('AuthService', () => {
           displayName: 'Bob 2',
         }),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('login', () => {
+    beforeEach(async () => {
+      await authService.register({
+        email: 'carol@example.com',
+        password: 'correct-password',
+        displayName: 'Carol',
+      });
+    });
+
+    it('returns tokens for correct credentials', async () => {
+      const result = await authService.login({
+        email: 'carol@example.com',
+        password: 'correct-password',
+      });
+
+      expect(result.accessToken).toBeDefined();
+      expect(result.refreshToken).toBeDefined();
+    });
+
+    it('rejects an unknown email with 401', async () => {
+      await expect(
+        authService.login({ email: 'nobody@example.com', password: 'whatever' }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejects a wrong password with 401', async () => {
+      await expect(
+        authService.login({ email: 'carol@example.com', password: 'wrong-password' }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 });
