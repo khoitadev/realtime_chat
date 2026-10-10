@@ -152,5 +152,28 @@ describe('AuthService', () => {
         'Session revoked — please log in again',
       );
     });
+
+    it('rejects an expired (but not revoked) token with "Refresh token expired"', async () => {
+      await authService.register({
+        email: 'frank@example.com',
+        password: 'password123',
+        displayName: 'Frank',
+      });
+      const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'frank@example.com' } });
+
+      const expiredPlainToken = 'expired-token-plaintext';
+      const expiredHash = createHash('sha256').update(expiredPlainToken).digest('hex');
+      await prisma.refreshToken.create({
+        data: {
+          userId: owner.id,
+          tokenHash: expiredHash,
+          expiresAt: new Date(Date.now() - 1000), // 1 second in the past
+        },
+      });
+
+      await expect(authService.refresh(expiredPlainToken)).rejects.toThrow(
+        'Refresh token expired',
+      );
+    });
   });
 });

@@ -70,6 +70,10 @@ export class AuthService {
       throw new UnauthorizedException('Session revoked — please log in again');
     }
 
+    if (stored.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
     await this.prisma.refreshToken.update({
       where: { id: stored.id },
       data: { revokedAt: new Date() },
