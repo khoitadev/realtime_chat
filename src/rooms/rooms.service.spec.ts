@@ -77,4 +77,19 @@ describe('RoomsService', () => {
       await expect(roomsService.joinRoom(owner.id, room.id)).resolves.toBeDefined();
     });
   });
+
+  describe('listRooms', () => {
+    it('returns only rooms the user has joined', async () => {
+      const user = await createUser('lister@example.com');
+      const outsider = await createUser('outsider@example.com');
+
+      const roomA = await roomsService.createRoom(user.id, { name: 'A' });
+      await roomsService.createRoom(outsider.id, { name: 'B' });
+      await roomsService.joinRoom(user.id, roomA.id); // already a member, no-op
+
+      const rooms = await roomsService.listRooms(user.id);
+
+      expect(rooms.map((r) => r.id)).toEqual([roomA.id]);
+    });
+  });
 });

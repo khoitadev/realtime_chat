@@ -29,4 +29,12 @@ export class RoomsService {
       update: {},
     });
   }
+
+  async listRooms(userId: string): Promise<Room[]> {
+    const memberships = await this.prisma.roomMember.findMany({
+      where: { userId },
+      include: { room: true },
+    });
+    return memberships.map((m) => m.room);
+  }
 }
