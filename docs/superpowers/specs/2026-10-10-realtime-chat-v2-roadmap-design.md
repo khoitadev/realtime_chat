@@ -33,11 +33,12 @@ xem trang Notion "Ôn tập: Kiến trúc Realtime Chat System"), với 2 mục 
 | 2 | Realtime: Socket.IO trong cùng app (1 instance, chưa cần Redis adapter) — WS auth qua short-lived token (BFF pattern từ Next.js Route Handler) | Áp lại Module 2/3 |
 | 3 | Scale-readiness: Redis adapter (multi-instance) + presence dùng **Redis Set** (không dùng 1 string) | Fix #2 (bug multi-tab presence) |
 | 4 | Tách **auth-service** (DB riêng `auth_db`) — phần còn lại gọi HTTP sang auth-service, verify JWT stateless (không gọi lại auth-service mỗi request) | Củng cố lý do Module 1 (data ownership, không phải chỉ fault isolation) |
-| 5 | Đưa RabbitMQ vào, tách **notification-service** (consumer đầu tiên) — idempotency-rollback đúng từ đầu (set key sau side-effect hoặc rollback khi fail), `prefetch` set đúng (tránh non-deterministic ordering), retry bền ở broker (TTL + Dead Letter Exchange, không `setTimeout` trong RAM), payload event có field `correlationId` | Fix #3, #4, #5 (một phần), #9 |
-| 6 | Tách **analytics-service** — xử lý đúng side-effect non-commutative (so sánh timestamp trước khi ghi đè `readAt`, tránh last-write-wins sai do xử lý concurrent) | Fix #5 (phần còn lại) |
-| 7 | Tách **search-service** (Elasticsearch) + cache-aside thật cho trang đầu message (nối `getMessages()` không-cursor với Redis cache, không để cache write-only) | Fix #6 |
-| 8 | Cross-cutting: `/health` thành readiness check thật (ping Postgres/Redis/RabbitMQ, trả `503` khi dependency chết), correlation-id forward xuyên suốt mọi proxy HTTP, graceful shutdown dùng 1 cách nhất quán (không giữ abstraction chết kiểu `ShutdownService` cũ), deploy có rollback khi smoke test fail | Fix #7, #8 |
-| 9 (tuỳ chọn) | Chọn 1-2 tính năng mới từ danh sách đã brainstorm (typing indicator, edit/delete message, room roles, Web Push, unread count...) | — |
+| 5 | Tách **gateway** (WS + HTTP proxy) ra khỏi phần rooms/messages — lúc này gateway có **2 backend** để proxy tới (auth-service + rooms/messages còn lại), đúng vai trò "hợp nhất nhiều service phía sau". Phần rooms/messages (không còn WS) phải **push message qua Redis pub/sub** để gateway emit hộ vào socket — áp lại đúng pattern đã học ở Module 3 | Củng cố Module 3 (service không chạy WS push qua pub/sub) |
+| 6 | Đưa RabbitMQ vào, tách **notification-service** (consumer đầu tiên) — idempotency-rollback đúng từ đầu (set key sau side-effect hoặc rollback khi fail), `prefetch` set đúng (tránh non-deterministic ordering), retry bền ở broker (TTL + Dead Letter Exchange, không `setTimeout` trong RAM), payload event có field `correlationId` | Fix #3, #4, #5 (một phần), #9 |
+| 7 | Tách **analytics-service** — xử lý đúng side-effect non-commutative (so sánh timestamp trước khi ghi đè `readAt`, tránh last-write-wins sai do xử lý concurrent) | Fix #5 (phần còn lại) |
+| 8 | Tách **search-service** (Elasticsearch) + cache-aside thật cho trang đầu message (nối `getMessages()` không-cursor với Redis cache, không để cache write-only) | Fix #6 |
+| 9 | Cross-cutting: `/health` thành readiness check thật (ping Postgres/Redis/RabbitMQ, trả `503` khi dependency chết), correlation-id forward xuyên suốt mọi proxy HTTP, graceful shutdown dùng 1 cách nhất quán (không giữ abstraction chết kiểu `ShutdownService` cũ), deploy có rollback khi smoke test fail | Fix #7, #8 |
+| 10 (tuỳ chọn) | Chọn 1-2 tính năng mới từ danh sách đã brainstorm (typing indicator, edit/delete message, room roles, Web Push, unread count...) | — |
 
 ## Ngoài phạm vi (giai đoạn này)
 
