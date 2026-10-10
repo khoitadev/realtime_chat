@@ -5,6 +5,7 @@ import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { cleanDatabase } from '../../test/db-cleanup';
+import { createHash } from 'crypto';
 
 describe('AuthService', () => {
   let authService: AuthService;
@@ -94,6 +95,30 @@ describe('AuthService', () => {
       await expect(
         authService.login({ email: 'carol@example.com', password: 'wrong-password' }),
       ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('refresh', () => {
+    it('rotates the token: old token becomes revoked, new token is valid and unrevoked', async () => {
+      const { refreshToken } = await authService.register({
+        email: 'dave@example.com',
+        password: 'password123',
+        displayName: 'Dave',
+      });
+
+      const result = await authService.refresh(refreshToken);
+
+      expect(result.accessToken).toBeDefined();
+      expect(result.refreshToken).toBeDefined();
+      expect(result.refreshToken).not.toBe(refreshToken);
+
+      const oldHash = createHash('sha256').update(refreshToken).digest('hex');
+      const oldRow = await prisma.refreshToken.findUnique({ where: { tokenHash: oldHash } });
+      expect(oldRow!.revokedAt).not.toBeNull();
+
+      const newHash = createHash('sha256').update(result.refreshToken).digest('hex');
+      const newRow = await prisma.refreshToken.findUnique({ where: { tokenHash: newHash } });
+      expect(newRow!.revokedAt).toBeNull();
     });
   });
 });

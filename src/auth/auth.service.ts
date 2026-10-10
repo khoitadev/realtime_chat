@@ -53,4 +53,20 @@ export class AuthService {
 
     return this.issueTokens(user.id);
   }
+
+  async refresh(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+    const stored = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
+
+    if (!stored) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    await this.prisma.refreshToken.update({
+      where: { id: stored.id },
+      data: { revokedAt: new Date() },
+    });
+
+    return this.issueTokens(stored.userId);
+  }
 }
