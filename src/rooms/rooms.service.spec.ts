@@ -160,5 +160,51 @@ describe('RoomsService', () => {
       expect(page3.items.map((m) => m.content)).toEqual(['message-0']);
       expect(page3.nextCursor).toBeNull();
     });
+
+    it('tie-breaks by id when two messages share the exact same createdAt', async () => {
+      const user = await createUser('tiebreak@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'Tied' });
+      const sameInstant = new Date();
+
+      const [msgA, msgB] = await Promise.all([
+        prisma.message.create({
+          data: { roomId: room.id, senderId: user.id, content: 'tied-a', createdAt: sameInstant },
+        }),
+        prisma.message.create({
+          data: { roomId: room.id, senderId: user.id, content: 'tied-b', createdAt: sameInstant },
+        }),
+      ]);
+      const [lower, higher] = [msgA, msgB].sort((a, b) => (a.id < b.id ? -1 : 1));
+
+      const page1 = await roomsService.getMessages(user.id, room.id, undefined, 1);
+      expect(page1.items[0].id).toBe(higher.id);
+      expect(page1.nextCursor).toBe(`${higher.createdAt.toISOString()}|${higher.id}`);
+
+      const page2 = await roomsService.getMessages(user.id, room.id, page1.nextCursor!, 1);
+      expect(page2.items[0].id).toBe(lower.id);
+      expect(page2.nextCursor).toBeNull();
+    });
+
+    it('is not affected by a new message inserted between two paginated calls', async () => {
+      const user = await createUser('midinsert@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'MidInsert' });
+      await seedMessages(room.id, user.id, 4); // message-0..message-3, oldest..newest
+
+      const page1 = await roomsService.getMessages(user.id, room.id, undefined, 2);
+      expect(page1.items.map((m) => m.content)).toEqual(['message-2', 'message-3']);
+
+      // simulate a new message arriving after page1 was fetched but before page2
+      await prisma.message.create({
+        data: {
+          roomId: room.id,
+          senderId: user.id,
+          content: 'message-new',
+          createdAt: new Date(Date.now() + 10_000), // newer than everything seeded
+        },
+      });
+
+      const page2 = await roomsService.getMessages(user.id, room.id, page1.nextCursor!, 2);
+      expect(page2.items.map((m) => m.content)).toEqual(['message-0', 'message-1']);
+    });
   });
 });
