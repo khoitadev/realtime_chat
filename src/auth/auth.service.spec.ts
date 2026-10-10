@@ -120,5 +120,11 @@ describe('AuthService', () => {
       const newRow = await prisma.refreshToken.findUnique({ where: { tokenHash: newHash } });
       expect(newRow!.revokedAt).toBeNull();
     });
+
+    it('rejects an unknown token with "Invalid refresh token"', async () => {
+      await expect(authService.refresh('not-a-real-token')).rejects.toThrow(
+        'Invalid refresh token',
+      );
+    });
   });
 });
