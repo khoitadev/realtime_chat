@@ -1,0 +1,25 @@
+version: "3.8"
+services:
+  postgres-dev:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chat_dev
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chat_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_test:/var/lib/postgresql/data
+volumes:
+  pgdata_dev:
+  pgdata_test:
