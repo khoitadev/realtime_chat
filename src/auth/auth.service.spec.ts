@@ -176,4 +176,29 @@ describe('AuthService', () => {
       );
     });
   });
+
+  describe('logout', () => {
+    it('revokes only the given token, leaving other sessions of the same user valid', async () => {
+      const { refreshToken: sessionA } = await authService.register({
+        email: 'grace@example.com',
+        password: 'password123',
+        displayName: 'Grace',
+      });
+      const { refreshToken: sessionB } = await authService.login({
+        email: 'grace@example.com',
+        password: 'password123',
+      });
+
+      const result = await authService.logout(sessionA);
+      expect(result).toEqual({ success: true });
+
+      const hashA = createHash('sha256').update(sessionA).digest('hex');
+      const rowA = await prisma.refreshToken.findUnique({ where: { tokenHash: hashA } });
+      expect(rowA!.revokedAt).not.toBeNull();
+
+      // sessionB must still be usable
+      const refreshed = await authService.refresh(sessionB);
+      expect(refreshed.accessToken).toBeDefined();
+    });
+  });
 });

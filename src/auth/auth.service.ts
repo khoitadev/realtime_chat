@@ -81,4 +81,13 @@ export class AuthService {
 
     return this.issueTokens(stored.userId);
   }
+
+  async logout(refreshToken: string): Promise<{ success: true }> {
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+    await this.prisma.refreshToken.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { success: true };
+  }
 }
