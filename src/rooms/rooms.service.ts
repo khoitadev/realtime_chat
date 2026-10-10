@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { Room } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Room, RoomMember } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 
@@ -14,6 +14,19 @@ export class RoomsService {
         createdBy: userId,
         members: { create: { userId } },
       },
+    });
+  }
+
+  async joinRoom(userId: string, roomId: string): Promise<RoomMember> {
+    const room = await this.prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+
+    return this.prisma.roomMember.upsert({
+      where: { roomId_userId: { roomId, userId } },
+      create: { roomId, userId },
+      update: {},
     });
   }
 }

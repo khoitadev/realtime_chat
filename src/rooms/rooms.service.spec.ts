@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { cleanDatabase } from '../../test/db-cleanup';
@@ -44,6 +45,36 @@ describe('RoomsService', () => {
         where: { roomId_userId: { roomId: room.id, userId: user.id } },
       });
       expect(membership).not.toBeNull();
+    });
+  });
+
+  describe('joinRoom', () => {
+    it('adds the user as a member of an existing room', async () => {
+      const owner = await createUser('owner2@example.com');
+      const joiner = await createUser('joiner@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'Random' });
+
+      await roomsService.joinRoom(joiner.id, room.id);
+
+      const membership = await prisma.roomMember.findUnique({
+        where: { roomId_userId: { roomId: room.id, userId: joiner.id } },
+      });
+      expect(membership).not.toBeNull();
+    });
+
+    it('throws NotFoundException for a non-existent room', async () => {
+      const user = await createUser('lonely@example.com');
+
+      await expect(roomsService.joinRoom(user.id, 'does-not-exist')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('is idempotent when the user is already a member', async () => {
+      const owner = await createUser('owner3@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'Dup' });
+
+      await expect(roomsService.joinRoom(owner.id, room.id)).resolves.toBeDefined();
     });
   });
 });
