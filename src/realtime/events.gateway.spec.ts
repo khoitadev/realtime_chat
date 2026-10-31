@@ -77,4 +77,56 @@ describe('EventsGateway', () => {
       await expect(connectWithTicket(ticket)).rejects.toBeDefined();
     });
   });
+
+  describe('room:subscribe / room:unsubscribe', () => {
+    function emitWithAck<T>(socket: ClientSocket, event: string, payload: unknown): Promise<T> {
+      return new Promise((resolve) => socket.emit(event, payload, resolve));
+    }
+
+    it('allows a member to subscribe to a room', async () => {
+      const user = await createUser('subuser@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'Sub' });
+      const ticket = wsTicketService.issue(user.id);
+      const socket = await connectWithTicket(ticket);
+
+      const ack = await emitWithAck<{ success: boolean }>(socket, 'room:subscribe', {
+        roomId: room.id,
+      });
+
+      expect(ack.success).toBe(true);
+      socket.disconnect();
+    });
+
+    it('rejects subscribe when the user is not a member', async () => {
+      const owner = await createUser('subowner@example.com');
+      const outsider = await createUser('suboutsider@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'SubPrivate' });
+      const ticket = wsTicketService.issue(outsider.id);
+      const socket = await connectWithTicket(ticket);
+
+      const ack = await emitWithAck<{ success: boolean; error?: string }>(
+        socket,
+        'room:subscribe',
+        { roomId: room.id },
+      );
+
+      expect(ack.success).toBe(false);
+      expect(ack.error).toBe('Not a member of this room');
+      socket.disconnect();
+    });
+
+    it('allows unsubscribing without a membership check', async () => {
+      const user = await createUser('unsubuser@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'Unsub' });
+      const ticket = wsTicketService.issue(user.id);
+      const socket = await connectWithTicket(ticket);
+
+      const ack = await emitWithAck<{ success: boolean }>(socket, 'room:unsubscribe', {
+        roomId: room.id,
+      });
+
+      expect(ack.success).toBe(true);
+      socket.disconnect();
+    });
+  });
 });
