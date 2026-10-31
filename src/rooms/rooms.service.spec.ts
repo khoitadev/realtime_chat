@@ -222,7 +222,7 @@ describe('RoomsService', () => {
       const room = await roomsService.createRoom(owner.id, { name: 'Y' });
 
       await expect(roomsService.assertMember(outsider.id, room.id)).rejects.toThrow(
-        ForbiddenException,
+        'Not a member of this room',
       );
     });
   });
