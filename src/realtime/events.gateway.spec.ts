@@ -145,8 +145,11 @@ describe('EventsGateway', () => {
       await emitWithAck(socketA, 'room:subscribe', { roomId: room.id });
       await emitWithAck(socketB, 'room:subscribe', { roomId: room.id });
 
-      const received = new Promise<{ content: string }>((resolve) =>
+      const receivedByB = new Promise<{ content: string }>((resolve) =>
         socketB.once('message:new', resolve),
+      );
+      const receivedByA = new Promise<{ content: string }>((resolve) =>
+        socketA.once('message:new', resolve),
       );
 
       const ack = await emitWithAck<{ success: boolean }>(socketA, 'message:send', {
@@ -155,8 +158,9 @@ describe('EventsGateway', () => {
       });
 
       expect(ack.success).toBe(true);
-      const broadcast = await received;
-      expect(broadcast.content).toBe('hello from A');
+      const [broadcastToB, broadcastToA] = await Promise.all([receivedByB, receivedByA]);
+      expect(broadcastToB.content).toBe('hello from A');
+      expect(broadcastToA.content).toBe('hello from A');
 
       const stored = await prisma.message.findFirst({ where: { roomId: room.id } });
       expect(stored?.content).toBe('hello from A');
