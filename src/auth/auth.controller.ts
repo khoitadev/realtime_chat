@@ -5,12 +5,14 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { WsTicketService } from '../realtime/ws-ticket.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly prisma: PrismaService,
+    private readonly wsTicketService: WsTicketService,
   ) {}
 
   @Post('register')
@@ -39,5 +41,11 @@ export class AuthController {
   async me(@Req() req: { user: { id: string } }) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: req.user.id } });
     return { id: user.id, email: user.email, displayName: user.displayName };
+  }
+
+  @Post('ws-ticket')
+  @UseGuards(JwtAuthGuard)
+  wsTicket(@Req() req: { user: { id: string } }) {
+    return { ticket: this.wsTicketService.issue(req.user.id), expiresIn: 30 };
   }
 }
