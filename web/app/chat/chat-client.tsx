@@ -30,10 +30,13 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
   }, [activeRoomId]);
 
   useEffect(() => {
+    let cancelled = false;
     let socket: Socket;
+
     (async () => {
       const res = await fetch('/api/ws-ticket');
       const { ticket } = await res.json();
+      if (cancelled) return;
       socket = io(process.env.NEXT_PUBLIC_NEST_URL ?? 'http://localhost:3000', {
         auth: { ticket },
       });
@@ -46,6 +49,7 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
     })();
 
     return () => {
+      cancelled = true;
       socket?.disconnect();
     };
   }, []);
