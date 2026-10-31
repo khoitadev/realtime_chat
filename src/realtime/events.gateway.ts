@@ -5,6 +5,7 @@ import {
   OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WsTicketService } from './ws-ticket.service';
@@ -18,6 +19,9 @@ interface AckResponse {
 @Injectable()
 @WebSocketGateway({ cors: true })
 export class EventsGateway implements OnGatewayInit {
+  @WebSocketServer()
+  server!: Server;
+
   constructor(
     private readonly wsTicketService: WsTicketService,
     private readonly roomsService: RoomsService,
@@ -59,5 +63,25 @@ export class EventsGateway implements OnGatewayInit {
   ): Promise<AckResponse> {
     await client.leave(body.roomId);
     return { success: true };
+  }
+
+  @SubscribeMessage('message:send')
+  async handleMessageSend(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { roomId: string; content: string },
+  ): Promise<AckResponse> {
+    if (!body.content || !body.content.trim()) {
+      return { success: false, error: 'content must not be empty' };
+    }
+
+    try {
+      const message = await this.roomsService.sendMessage(client.data.userId, body.roomId, {
+        content: body.content,
+      });
+      this.server.to(body.roomId).emit('message:new', message);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
   }
 }

@@ -129,4 +129,72 @@ describe('EventsGateway', () => {
       socket.disconnect();
     });
   });
+
+  describe('message:send', () => {
+    function emitWithAck<T>(socket: ClientSocket, event: string, payload: unknown): Promise<T> {
+      return new Promise((resolve) => socket.emit(event, payload, resolve));
+    }
+
+    it('persists the message, acks success, and broadcasts message:new to subscribers', async () => {
+      const user = await createUser('sender-ws@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'Broadcast' });
+
+      const socketA = await connectWithTicket(wsTicketService.issue(user.id)); // sender
+      const socketB = await connectWithTicket(wsTicketService.issue(user.id)); // second tab
+
+      await emitWithAck(socketA, 'room:subscribe', { roomId: room.id });
+      await emitWithAck(socketB, 'room:subscribe', { roomId: room.id });
+
+      const received = new Promise<{ content: string }>((resolve) =>
+        socketB.once('message:new', resolve),
+      );
+
+      const ack = await emitWithAck<{ success: boolean }>(socketA, 'message:send', {
+        roomId: room.id,
+        content: 'hello from A',
+      });
+
+      expect(ack.success).toBe(true);
+      const broadcast = await received;
+      expect(broadcast.content).toBe('hello from A');
+
+      const stored = await prisma.message.findFirst({ where: { roomId: room.id } });
+      expect(stored?.content).toBe('hello from A');
+
+      socketA.disconnect();
+      socketB.disconnect();
+    });
+
+    it('rejects an empty message with an ack error', async () => {
+      const user = await createUser('emptysender@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'EmptyMsg' });
+      const socket = await connectWithTicket(wsTicketService.issue(user.id));
+      await emitWithAck(socket, 'room:subscribe', { roomId: room.id });
+
+      const ack = await emitWithAck<{ success: boolean; error?: string }>(socket, 'message:send', {
+        roomId: room.id,
+        content: '   ',
+      });
+
+      expect(ack.success).toBe(false);
+      expect(ack.error).toBe('content must not be empty');
+      socket.disconnect();
+    });
+
+    it('rejects when the sender is not a room member', async () => {
+      const owner = await createUser('msgowner-ws@example.com');
+      const outsider = await createUser('msgoutsider-ws@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'PrivateWs' });
+      const socket = await connectWithTicket(wsTicketService.issue(outsider.id));
+
+      const ack = await emitWithAck<{ success: boolean; error?: string }>(socket, 'message:send', {
+        roomId: room.id,
+        content: 'intruder',
+      });
+
+      expect(ack.success).toBe(false);
+      expect(ack.error).toBe('Not a member of this room');
+      socket.disconnect();
+    });
+  });
 });
