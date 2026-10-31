@@ -7,5 +7,6 @@ import { RoomsController } from './rooms.controller';
   imports: [PassportModule],
   controllers: [RoomsController],
   providers: [RoomsService],
+  exports: [RoomsService],
 })
 export class RoomsModule {}

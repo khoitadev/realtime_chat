@@ -207,4 +207,23 @@ describe('RoomsService', () => {
       expect(page2.items.map((m) => m.content)).toEqual(['message-0', 'message-1']);
     });
   });
+
+  describe('assertMember', () => {
+    it('resolves when the user is a member', async () => {
+      const user = await createUser('member@example.com');
+      const room = await roomsService.createRoom(user.id, { name: 'X' });
+
+      await expect(roomsService.assertMember(user.id, room.id)).resolves.toBeUndefined();
+    });
+
+    it('throws ForbiddenException when the user is not a member', async () => {
+      const owner = await createUser('owner5@example.com');
+      const outsider = await createUser('outsider3@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'Y' });
+
+      await expect(roomsService.assertMember(outsider.id, room.id)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
 });

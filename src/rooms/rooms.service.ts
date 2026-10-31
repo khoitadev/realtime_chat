@@ -39,7 +39,7 @@ export class RoomsService {
     return memberships.map((m) => m.room);
   }
 
-  private async assertMember(userId: string, roomId: string): Promise<void> {
+  async assertMember(userId: string, roomId: string): Promise<void> {
     const membership = await this.prisma.roomMember.findUnique({
       where: { roomId_userId: { roomId, userId } },
     });
