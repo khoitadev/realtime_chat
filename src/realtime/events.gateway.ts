@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -70,18 +70,21 @@ export class EventsGateway implements OnGatewayInit {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { roomId: string; content: string },
   ): Promise<AckResponse> {
-    if (!body.content || !body.content.trim()) {
-      return { success: false, error: 'content must not be empty' };
-    }
-
     try {
+      if (!body?.content || typeof body.content !== 'string' || !body.content.trim()) {
+        return { success: false, error: 'content must not be empty' };
+      }
+
       const message = await this.roomsService.sendMessage(client.data.userId, body.roomId, {
         content: body.content,
       });
       this.server.to(body.roomId).emit('message:new', message);
       return { success: true };
     } catch (err) {
-      return { success: false, error: (err as Error).message };
+      if (err instanceof HttpException) {
+        return { success: false, error: err.message };
+      }
+      return { success: false, error: 'Invalid request' };
     }
   }
 }
