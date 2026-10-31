@@ -30,27 +30,37 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
   }, [activeRoomId]);
 
   useEffect(() => {
-    let cancelled = false;
-    let socket: Socket;
+    // Unlike the previous "fetch ticket then create socket" shape, io(...) is
+    // called synchronously here and the ticket is fetched fresh on every
+    // connection attempt (initial connect AND reconnect) via the auth
+    // callback below. There's no async gap before the socket exists, so a
+    // fast unmount is handled entirely by calling socket.disconnect() in the
+    // cleanup below, which is safe to call regardless of connection state.
+    const socket = io(process.env.NEXT_PUBLIC_NEST_URL ?? 'http://localhost:3000', {
+      auth: (cb) => {
+        fetch('/api/ws-ticket')
+          .then((res) => res.json())
+          .then(({ ticket }) => cb({ ticket }))
+          .catch(() => cb({}));
+      },
+    });
 
-    (async () => {
-      const res = await fetch('/api/ws-ticket');
-      const { ticket } = await res.json();
-      if (cancelled) return;
-      socket = io(process.env.NEXT_PUBLIC_NEST_URL ?? 'http://localhost:3000', {
-        auth: { ticket },
-      });
-      socket.on('message:new', (message: Message) => {
-        if (message.roomId === activeRoomIdRef.current) {
-          setMessages((prev) => [...prev, message]);
-        }
-      });
-      socketRef.current = socket;
-    })();
+    socket.on('message:new', (message: Message) => {
+      if (message.roomId === activeRoomIdRef.current) {
+        setMessages((prev) => [...prev, message]);
+      }
+    });
+
+    socket.on('connect', () => {
+      if (activeRoomIdRef.current) {
+        socket.emit('room:subscribe', { roomId: activeRoomIdRef.current });
+      }
+    });
+
+    socketRef.current = socket;
 
     return () => {
-      cancelled = true;
-      socket?.disconnect();
+      socket.disconnect();
     };
   }, []);
 
@@ -69,14 +79,26 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newRoomName }),
     });
+    if (!res.ok) {
+      console.error('Failed to create room', res.status);
+      return;
+    }
     const room: Room = await res.json();
     setRooms((prev) => [...prev, room]);
     setNewRoomName('');
   }
 
   async function joinRoom() {
-    await fetch(`/api/rooms/${joinRoomId}/join`, { method: 'POST' });
+    const joinRes = await fetch(`/api/rooms/${joinRoomId}/join`, { method: 'POST' });
+    if (!joinRes.ok) {
+      console.error('Failed to join room', joinRes.status);
+      return;
+    }
     const res = await fetch('/api/rooms');
+    if (!res.ok) {
+      console.error('Failed to list rooms', res.status);
+      return;
+    }
     setRooms(await res.json());
     setJoinRoomId('');
   }
