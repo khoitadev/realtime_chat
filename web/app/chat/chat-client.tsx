@@ -22,6 +22,7 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
   const [newRoomName, setNewRoomName] = useState('');
   const [joinRoomId, setJoinRoomId] = useState('');
   const [draft, setDraft] = useState('');
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const socketRef = useRef<Socket | null>(null);
   const activeRoomIdRef = useRef<string | null>(null);
 
@@ -37,6 +38,7 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
     // fast unmount is handled entirely by calling socket.disconnect() in the
     // cleanup below, which is safe to call regardless of connection state.
     const socket = io(process.env.NEXT_PUBLIC_NEST_URL ?? 'http://localhost:3000', {
+      transports: ['websocket'], // no sticky sessions needed behind a load balancer
       auth: (cb) => {
         fetch('/api/ws-ticket')
           .then((res) => res.json())
@@ -51,9 +53,18 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
       }
     });
 
+    socket.on('presence:update', ({ userId, online }: { userId: string; online: boolean }) => {
+      setOnlineUserIds((prev) => {
+        const without = prev.filter((id) => id !== userId);
+        return online ? [...without, userId] : without;
+      });
+    });
+
     socket.on('connect', () => {
-      if (activeRoomIdRef.current) {
-        socket.emit('room:subscribe', { roomId: activeRoomIdRef.current });
+      const roomId = activeRoomIdRef.current;
+      if (roomId) {
+        socket.emit('room:subscribe', { roomId });
+        void loadPresence(roomId); // deltas may have been missed while disconnected
       }
     });
 
@@ -64,9 +75,18 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
     };
   }, []);
 
+  async function loadPresence(roomId: string) {
+    const res = await fetch(`/api/rooms/${roomId}/presence`);
+    if (!res.ok) return;
+    const { onlineUserIds: ids } = await res.json();
+    if (roomId === activeRoomIdRef.current) setOnlineUserIds(ids);
+  }
+
   async function selectRoom(roomId: string) {
     setActiveRoomId(roomId);
+    activeRoomIdRef.current = roomId;
     socketRef.current?.emit('room:subscribe', { roomId });
+    void loadPresence(roomId);
 
     const res = await fetch(`/api/rooms/${roomId}/messages`);
     const { items } = await res.json();
@@ -140,6 +160,7 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
             <li key={m.id}>{m.content}</li>
           ))}
         </ul>
+        {activeRoomId && <p>Online now: {onlineUserIds.length}</p>}
         {activeRoomId && (
           <div>
             <input value={draft} onChange={(e) => setDraft(e.target.value)} />
