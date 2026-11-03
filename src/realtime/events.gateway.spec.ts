@@ -5,6 +5,11 @@ import { io, Socket as ClientSocket } from 'socket.io-client';
 import { RedisModule } from '../redis/redis.module';
 import { EventsGateway } from './events.gateway';
 import { WsTicketService } from './ws-ticket.service';
+import {
+  DEFAULT_PRESENCE_OPTIONS,
+  PRESENCE_OPTIONS,
+  PresenceService,
+} from './presence.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { cleanDatabase } from '../../test/db-cleanup';
@@ -19,7 +24,14 @@ describe('EventsGateway', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [RedisModule],
-      providers: [EventsGateway, WsTicketService, RoomsService, PrismaService],
+      providers: [
+        EventsGateway,
+        WsTicketService,
+        RoomsService,
+        PrismaService,
+        PresenceService,
+        { provide: PRESENCE_OPTIONS, useValue: DEFAULT_PRESENCE_OPTIONS },
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication();

@@ -1,7 +1,9 @@
-import { HttpException, Injectable } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
   OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
@@ -9,6 +11,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WsTicketService } from './ws-ticket.service';
+import { PresenceService } from './presence.service';
 import { RoomsService } from '../rooms/rooms.service';
 
 interface AckResponse {
@@ -18,13 +21,16 @@ interface AckResponse {
 
 @Injectable()
 @WebSocketGateway({ cors: true, transports: ['websocket'] })
-export class EventsGateway implements OnGatewayInit {
+export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  private readonly logger = new Logger(EventsGateway.name);
+
   @WebSocketServer()
   server!: Server;
 
   constructor(
     private readonly wsTicketService: WsTicketService,
     private readonly roomsService: RoomsService,
+    private readonly presenceService: PresenceService,
   ) {}
 
   afterInit(server: Server): void {
@@ -44,6 +50,34 @@ export class EventsGateway implements OnGatewayInit {
         next(new Error('Unauthorized'));
       }
     });
+  }
+
+  async handleConnection(client: Socket): Promise<void> {
+    try {
+      const userId = client.data.userId as string;
+      const cameOnline = await this.presenceService.connect(userId, client.id);
+      if (cameOnline) await this.broadcastPresence(userId, true);
+    } catch (err) {
+      this.logger.error(`presence connect failed: ${(err as Error).message}`);
+    }
+  }
+
+  async handleDisconnect(client: Socket): Promise<void> {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) return;
+    try {
+      const wentOffline = await this.presenceService.disconnect(userId, client.id);
+      if (wentOffline) await this.broadcastPresence(userId, false);
+    } catch (err) {
+      this.logger.error(`presence disconnect failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** Tells every room the user belongs to (on any instance, via the adapter). */
+  private async broadcastPresence(userId: string, online: boolean): Promise<void> {
+    const roomIds = await this.roomsService.listRoomIdsOf(userId);
+    if (roomIds.length === 0) return;
+    this.server.to(roomIds).emit('presence:update', { userId, online });
   }
 
   @SubscribeMessage('room:subscribe')
