@@ -1,4 +1,4 @@
-import { HttpException, Injectable, Logger } from '@nestjs/common';
+import { HttpException, Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -11,7 +11,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WsTicketService } from './ws-ticket.service';
-import { PresenceService } from './presence.service';
+import { PRESENCE_OPTIONS, PresenceOptions, PresenceService } from './presence.service';
 import { RoomsService } from '../rooms/rooms.service';
 
 interface AckResponse {
@@ -21,8 +21,11 @@ interface AckResponse {
 
 @Injectable()
 @WebSocketGateway({ cors: true, transports: ['websocket'] })
-export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class EventsGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+{
   private readonly logger = new Logger(EventsGateway.name);
+  private heartbeatTimer?: NodeJS.Timeout;
 
   @WebSocketServer()
   server!: Server;
@@ -31,6 +34,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     private readonly wsTicketService: WsTicketService,
     private readonly roomsService: RoomsService,
     private readonly presenceService: PresenceService,
+    @Inject(PRESENCE_OPTIONS) private readonly presenceOptions: PresenceOptions,
   ) {}
 
   afterInit(server: Server): void {
@@ -50,6 +54,32 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
         next(new Error('Unauthorized'));
       }
     });
+
+    this.heartbeatTimer = setInterval(
+      () => void this.refreshHeartbeats(),
+      this.presenceOptions.refreshIntervalMs,
+    );
+    this.heartbeatTimer.unref();
+  }
+
+  /** Refreshes heartbeats of the sockets connected to THIS instance only. */
+  private async refreshHeartbeats(): Promise<void> {
+    const local = [...this.server.sockets.sockets.values()].filter((s) => s.data.userId);
+    const results = await Promise.allSettled(
+      local.map((s) => this.presenceService.touch(s.data.userId as string, s.id)),
+    );
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        this.logger.error(`presence heartbeat failed: ${(r.reason as Error).message}`);
+      }
+    }
+  }
+
+  /** Graceful shutdown: stop heartbeating and remove this instance's sockets from presence. */
+  async onModuleDestroy(): Promise<void> {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    const local = [...(this.server?.sockets?.sockets.values() ?? [])];
+    await Promise.all(local.map((s) => this.handleDisconnect(s)));
   }
 
   async handleConnection(client: Socket): Promise<void> {
