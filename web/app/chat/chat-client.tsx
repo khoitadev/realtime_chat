@@ -53,11 +53,11 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
       }
     });
 
-    socket.on('presence:update', ({ userId, online }: { userId: string; online: boolean }) => {
-      setOnlineUserIds((prev) => {
-        const without = prev.filter((id) => id !== userId);
-        return online ? [...without, userId] : without;
-      });
+    // The event may concern a user outside the active room (sockets stay subscribed
+    // to every room they opened), so re-sync from the API instead of patching locally.
+    socket.on('presence:update', () => {
+      const roomId = activeRoomIdRef.current;
+      if (roomId) void loadPresence(roomId);
     });
 
     socket.on('connect', () => {
@@ -84,6 +84,7 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
 
   async function selectRoom(roomId: string) {
     setActiveRoomId(roomId);
+    setOnlineUserIds([]);
     activeRoomIdRef.current = roomId;
     socketRef.current?.emit('room:subscribe', { roomId });
     void loadPresence(roomId);
