@@ -229,4 +229,36 @@ describe('RoomsService', () => {
       );
     });
   });
+
+  describe('member lookups', () => {
+    it('listMemberIds returns the userIds of every member of the room', async () => {
+      const a = await createUser('lm-a@example.com');
+      const b = await createUser('lm-b@example.com');
+      const c = await createUser('lm-c@example.com');
+      const room = await roomsService.createRoom(a.id, { name: 'LM' });
+      await roomsService.joinRoom(b.id, room.id);
+
+      const ids = await roomsService.listMemberIds(room.id);
+
+      expect(ids.sort()).toEqual([a.id, b.id].sort());
+      expect(ids).not.toContain(c.id);
+    });
+
+    it('listRoomIdsOf returns the ids of every room the user belongs to', async () => {
+      const a = await createUser('lr-a@example.com');
+      const b = await createUser('lr-b@example.com');
+      const r1 = await roomsService.createRoom(a.id, { name: 'R1' });
+      const r2 = await roomsService.createRoom(a.id, { name: 'R2' });
+      await roomsService.createRoom(b.id, { name: 'Other' });
+
+      const ids = await roomsService.listRoomIdsOf(a.id);
+
+      expect(ids.sort()).toEqual([r1.id, r2.id].sort());
+    });
+
+    it('returns empty arrays for unknown ids', async () => {
+      expect(await roomsService.listMemberIds('00000000-0000-0000-0000-000000000000')).toEqual([]);
+      expect(await roomsService.listRoomIdsOf('00000000-0000-0000-0000-000000000000')).toEqual([]);
+    });
+  });
 });

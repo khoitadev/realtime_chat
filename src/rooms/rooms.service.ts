@@ -39,6 +39,22 @@ export class RoomsService {
     return memberships.map((m) => m.room);
   }
 
+  async listMemberIds(roomId: string): Promise<string[]> {
+    const rows = await this.prisma.roomMember.findMany({
+      where: { roomId },
+      select: { userId: true },
+    });
+    return rows.map((r) => r.userId);
+  }
+
+  async listRoomIdsOf(userId: string): Promise<string[]> {
+    const rows = await this.prisma.roomMember.findMany({
+      where: { userId },
+      select: { roomId: true },
+    });
+    return rows.map((r) => r.roomId);
+  }
+
   async assertMember(userId: string, roomId: string): Promise<void> {
     const membership = await this.prisma.roomMember.findUnique({
       where: { roomId_userId: { roomId, userId } },
