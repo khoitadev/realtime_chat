@@ -58,6 +58,7 @@ export class PresenceService implements OnModuleInit {
 local before = prune(KEYS[1])
 redis.call('SADD', KEYS[1], ARGV[1])
 redis.call('SET', 'presence:socket:' .. ARGV[1], ARGV[2], 'EX', ARGV[3])
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]) * 3)
 if before == 0 then return 1 else return 0 end`,
     });
     this.client.defineCommand('presenceDisconnect', {
@@ -72,6 +73,7 @@ if removed == 1 and left == 0 then return 1 else return 0 end`,
       numberOfKeys: 1,
       lua: `redis.call('SADD', KEYS[1], ARGV[1])
 redis.call('SET', 'presence:socket:' .. ARGV[1], ARGV[2], 'EX', ARGV[3])
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]) * 3)
 return 1`,
     });
     this.client.defineCommand('presenceIsOnline', {

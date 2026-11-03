@@ -17,18 +17,23 @@ Rulings = technical decisions made without asking (allowed by the task brief). E
 | R7 | Test env defaults `REDIS_URL` to `redis://localhost:6379/1`; `cleanRedis` refuses to flush db 0. | `.env.test` is git-ignored; guarantees tests can never wipe dev data. |
 | R8 | Multi-instance tests boot the real `AppModule` twice in one process (random ports, shared Postgres + Redis) via `test/instance.ts`. | Exercises the real wiring (including the adapter) without Docker/multi-process orchestration. |
 | R9 | `RedisIoAdapter.dispose()` is idempotent and relied on to be called by Nest's `SocketModule.close()` (verified in `@nestjs/websockets/socket-module.js`). | Avoids leaking pub/sub connections on `app.close()`. |
+| R10 | `RedisModule.onApplicationShutdown` registers `once('end')` before `quit()` and awaits it. | ioredis 6 resolves `quit()` on `+OK`, before the socket closes (verified: status `ready` right after, `end` ~50ms later); the plan's verbatim code failed its own test. |
+| R11 | `dump.rdb` ignored in `.gitignore`; `test-infra.sh` starts Redis with `--save "" --dir /tmp`. | Native Redis wrote a dump into the repo root. |
+| R12 | Web client: `presence:update` now triggers a re-fetch of `GET /rooms/:id/presence` (and the list is cleared on room switch) instead of patching locally. | Plan's local patch counted users outside the active room (sockets stay subscribed to every opened room) and showed a stale list on room switch. |
+| R13 | Final review findings #1-#3 (touch/connect/disconnect races) NOT changed: the Lua call for a socket is queued synchronously on one ioredis connection (connect at the `connection` event, touches queued in the same tick as the snapshot), so ordering holds. Evidence: a regression test (15 immediate open/close cycles across both instances, `multi-instance.spec`) passes 3/3 and is kept as a guard. | Avoid speculative complexity; test documents the invariant. |
+| R14 | Finding #4 accepted: `presence:update` is advisory, documented in spec; clients re-GET. Finding #5 applied: user Set gets `EXPIRE 3×heartbeatTtl` on connect/touch (+ test). Findings #6-#9 left as known minor (Cluster out of scope; shutdown concurrency; sleep-based timing margins). | Cheap leak fix vs. unneeded serialization. |
 
 ## Task status
 
 | Task | Status | Notes |
 |---|---|---|
-| 1 Deps + test infra | pending | |
-| 2 RedisModule + RedisIoAdapter | pending | |
-| 3 WsTicketService → Redis | pending | |
-| 4 PresenceService | pending | |
-| 5 RoomsService member lookups | pending | |
-| 6 Gateway presence + multi-instance harness | pending | |
-| 7 Heartbeat / crash / shutdown | pending | |
-| 8 Presence REST endpoint | pending | |
-| 9 Bootstrap + web client | pending | |
-| 10 Final verification | pending | |
+| 1 Deps + test infra | done | |
+| 2 RedisModule + RedisIoAdapter | done | |
+| 3 WsTicketService → Redis | done | |
+| 4 PresenceService | done | |
+| 5 RoomsService member lookups | done | |
+| 6 Gateway presence + multi-instance harness | done | |
+| 7 Heartbeat / crash / shutdown | done | |
+| 8 Presence REST endpoint | done | |
+| 9 Bootstrap + web client | done | |
+| 10 Final verification | done | |

@@ -139,6 +139,18 @@ describe('multi-instance realtime (2 app instances, 1 Redis, 1 Postgres)', () =>
       expect(events[1]).toEqual({ userId: subject.id, online: false });
     });
 
+    it('leaves no orphan socket when clients connect and disconnect immediately', async () => {
+      const user = await createUser('p-race@example.com');
+
+      for (let i = 0; i < 15; i++) {
+        const socket = await connectTo(i % 2 === 0 ? a : b, user.id);
+        socket.disconnect(); // closes while the server's connect handler may still be running
+      }
+
+      await waitFor(async () => (await a.redis.scard(`presence:user:${user.id}`)) === 0, 5000);
+      expect(await a.get<PresenceService>(PresenceService).isOnline(user.id)).toBe(false);
+    });
+
     it('does not send presence updates for rooms the user is not a member of', async () => {
       const subject = await createUser('p-subj2@example.com');
       const stranger = await createUser('p-stranger@example.com');

@@ -106,6 +106,13 @@ describe('PresenceService (Redis Set)', () => {
     expect(await service.isOnline('u1')).toBe(true);
   });
 
+  it('puts a TTL on the user Set so a crashed instance cannot leak it forever', async () => {
+    await service.connect('u1', 'sock-a');
+    const ttl = await redis.ttl('presence:user:u1');
+    expect(ttl).toBeGreaterThan(0);
+    expect(ttl).toBeLessThanOrEqual(3);
+  });
+
   it('onlineAmong returns only online users and handles an empty list', async () => {
     await service.connect('u1', 'sock-a');
     await service.connect('u3', 'sock-c');

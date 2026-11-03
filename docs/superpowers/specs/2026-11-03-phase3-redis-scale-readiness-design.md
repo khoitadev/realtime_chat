@@ -131,7 +131,7 @@ hẳn việc ticket hết hạn nằm treo trong RAM. Chữ ký đổi thành
 
 | Key | Kiểu | Nội dung | TTL |
 |---|---|---|---|
-| `presence:user:{userId}` | Set | `socketId` của mọi tab/device đang kết nối | không (dọn bằng logic) |
+| `presence:user:{userId}` | Set | `socketId` của mọi tab/device đang kết nối | 3 × `HEARTBEAT_TTL`, gia hạn mỗi connect/touch (chống rò rỉ khi instance chết và user không quay lại) |
 | `presence:socket:{socketId}` | String | giá trị `userId`; là "heartbeat" | `HEARTBEAT_TTL` = 60s |
 
 Set là nguồn sự thật; key heartbeat chỉ để biết 1 `socketId` trong Set còn
@@ -189,6 +189,7 @@ nếu cần), sau đó mới đóng Redis. Nest `enableShutdownHooks()` bật tr
 
 ## Giới hạn đã biết
 
+- `presence:update` là **advisory**: các broadcast của cùng một user có thể đảo thứ tự giữa các instance (mỗi broadcast có 1 truy vấn DB). Client luôn coi `GET .../presence` là nguồn sự thật (web/ re-fetch mỗi khi nhận event).
 - Instance crash: `GET .../presence` đúng sau ≤ TTL, nhưng event
   `online:false` **không được phát** (không ai chạy handler). Client xử lý
   bằng cách gọi lại `GET .../presence` khi reconnect/mở room. Có thể bổ
@@ -227,16 +228,16 @@ Postgres test (cổng 5433) + Redis (cổng 6379, **database 1**, flush trong
 
 ## Tiêu chí hoàn thành Phase 3
 
-- [ ] `WsTicketService` dùng Redis; ticket cấp ở instance này consume được ở
+- [x] `WsTicketService` dùng Redis; ticket cấp ở instance này consume được ở
       instance khác, dùng 1 lần, hết hạn sau 30s.
-- [ ] Hai instance chạy song song, chung Redis: `message:new` từ instance A
+- [x] Hai instance chạy song song, chung Redis: `message:new` từ instance A
       tới client kết nối vào B (và ngược lại).
-- [ ] Presence dùng Redis Set; mở N tab chỉ phát `online:true` 1 lần, đóng
+- [x] Presence dùng Redis Set; mở N tab chỉ phát `online:true` 1 lần, đóng
       từng tab chỉ phát `online:false` khi tab cuối đóng.
-- [ ] Socket mồ côi (không heartbeat) không giữ user online quá TTL.
-- [ ] `GET /rooms/:roomId/presence` đúng, chặn non-member.
-- [ ] Graceful shutdown dọn socket của instance khỏi Set.
-- [ ] `npx tsc --noEmit` sạch (`src/` và `web/`), mọi test (cũ và mới) pass
+- [x] Socket mồ côi (không heartbeat) không giữ user online quá TTL.
+- [x] `GET /rooms/:roomId/presence` đúng, chặn non-member.
+- [x] Graceful shutdown dọn socket của instance khỏi Set.
+- [x] `npx tsc --noEmit` sạch (`src/` và `web/`), mọi test (cũ và mới) pass
       với Postgres + Redis thật.
-- [ ] `docker-compose.yml` có service `redis`; `scripts/test-infra.sh` dựng
+- [x] `docker-compose.yml` có service `redis`; `scripts/test-infra.sh` dựng
       được hạ tầng test khi không có Docker.
