@@ -19,7 +19,7 @@ for db in chat_dev chat_test; do
 done
 
 if ! redis-cli -p "$REDIS_PORT" ping >/dev/null 2>&1; then
-  redis-server --port "$REDIS_PORT" --daemonize yes >/dev/null
+  redis-server --port "$REDIS_PORT" --daemonize yes --save "" --dir /tmp >/dev/null
   for _ in $(seq 1 20); do redis-cli -p "$REDIS_PORT" ping >/dev/null 2>&1 && break; sleep 0.25; done
 fi
 
