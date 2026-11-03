@@ -17,7 +17,7 @@ interface AckResponse {
 }
 
 @Injectable()
-@WebSocketGateway({ cors: true })
+@WebSocketGateway({ cors: true, transports: ['websocket'] })
 export class EventsGateway implements OnGatewayInit {
   @WebSocketServer()
   server!: Server;
@@ -28,17 +28,21 @@ export class EventsGateway implements OnGatewayInit {
   ) {}
 
   afterInit(server: Server): void {
-    server.use((socket: Socket, next: (err?: Error) => void) => {
-      const ticket = socket.handshake.auth?.ticket as string | undefined;
-      const userId = ticket ? this.wsTicketService.consume(ticket) : null;
+    server.use(async (socket: Socket, next: (err?: Error) => void) => {
+      try {
+        const ticket = socket.handshake.auth?.ticket as string | undefined;
+        const userId = ticket ? await this.wsTicketService.consume(ticket) : null;
 
-      if (!userId) {
+        if (!userId) {
+          next(new Error('Unauthorized'));
+          return;
+        }
+
+        socket.data.userId = userId;
+        next();
+      } catch {
         next(new Error('Unauthorized'));
-        return;
       }
-
-      socket.data.userId = userId;
-      next();
     });
   }
 

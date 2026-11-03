@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import { WsTicketService } from '../realtime/ws-ticket.service';
+import { RedisModule } from '../redis/redis.module';
 import { cleanDatabase } from '../../test/db-cleanup';
 
 describe('AuthController (POST /auth/ws-ticket)', () => {
@@ -21,6 +22,7 @@ describe('AuthController (POST /auth/ws-ticket)', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
+        RedisModule,
         PassportModule,
         JwtModule.registerAsync({
           imports: [ConfigModule],

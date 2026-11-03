@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AddressInfo } from 'net';
 import { io, Socket as ClientSocket } from 'socket.io-client';
+import { RedisModule } from '../redis/redis.module';
 import { EventsGateway } from './events.gateway';
 import { WsTicketService } from './ws-ticket.service';
 import { RoomsService } from '../rooms/rooms.service';
@@ -17,6 +18,7 @@ describe('EventsGateway', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
+      imports: [RedisModule],
       providers: [EventsGateway, WsTicketService, RoomsService, PrismaService],
     }).compile();
 
@@ -47,7 +49,12 @@ describe('EventsGateway', () => {
 
   function connectWithTicket(ticket: string): Promise<ClientSocket> {
     return new Promise((resolve, reject) => {
-      const socket = io(baseUrl, { auth: { ticket }, reconnection: false, forceNew: true });
+      const socket = io(baseUrl, {
+        auth: { ticket },
+        transports: ['websocket'],
+        reconnection: false,
+        forceNew: true,
+      });
       socket.on('connect', () => resolve(socket));
       socket.on('connect_error', (err) => reject(err));
     });
@@ -56,7 +63,7 @@ describe('EventsGateway', () => {
   describe('handleConnection', () => {
     it('accepts a connection with a valid ticket', async () => {
       const user = await createUser('wsuser@example.com');
-      const ticket = wsTicketService.issue(user.id);
+      const ticket = await wsTicketService.issue(user.id);
 
       const socket = await connectWithTicket(ticket);
       expect(socket.connected).toBe(true);
@@ -69,7 +76,7 @@ describe('EventsGateway', () => {
 
     it('rejects a connection when the ticket is reused', async () => {
       const user = await createUser('wsuser2@example.com');
-      const ticket = wsTicketService.issue(user.id);
+      const ticket = await wsTicketService.issue(user.id);
 
       const first = await connectWithTicket(ticket);
       first.disconnect();
@@ -86,7 +93,7 @@ describe('EventsGateway', () => {
     it('allows a member to subscribe to a room', async () => {
       const user = await createUser('subuser@example.com');
       const room = await roomsService.createRoom(user.id, { name: 'Sub' });
-      const ticket = wsTicketService.issue(user.id);
+      const ticket = await wsTicketService.issue(user.id);
       const socket = await connectWithTicket(ticket);
 
       const ack = await emitWithAck<{ success: boolean }>(socket, 'room:subscribe', {
@@ -101,7 +108,7 @@ describe('EventsGateway', () => {
       const owner = await createUser('subowner@example.com');
       const outsider = await createUser('suboutsider@example.com');
       const room = await roomsService.createRoom(owner.id, { name: 'SubPrivate' });
-      const ticket = wsTicketService.issue(outsider.id);
+      const ticket = await wsTicketService.issue(outsider.id);
       const socket = await connectWithTicket(ticket);
 
       const ack = await emitWithAck<{ success: boolean; error?: string }>(
@@ -118,7 +125,7 @@ describe('EventsGateway', () => {
     it('allows unsubscribing without a membership check', async () => {
       const user = await createUser('unsubuser@example.com');
       const room = await roomsService.createRoom(user.id, { name: 'Unsub' });
-      const ticket = wsTicketService.issue(user.id);
+      const ticket = await wsTicketService.issue(user.id);
       const socket = await connectWithTicket(ticket);
 
       const ack = await emitWithAck<{ success: boolean }>(socket, 'room:unsubscribe', {
@@ -139,8 +146,8 @@ describe('EventsGateway', () => {
       const user = await createUser('sender-ws@example.com');
       const room = await roomsService.createRoom(user.id, { name: 'Broadcast' });
 
-      const socketA = await connectWithTicket(wsTicketService.issue(user.id)); // sender
-      const socketB = await connectWithTicket(wsTicketService.issue(user.id)); // second tab
+      const socketA = await connectWithTicket(await wsTicketService.issue(user.id)); // sender
+      const socketB = await connectWithTicket(await wsTicketService.issue(user.id)); // second tab
 
       await emitWithAck(socketA, 'room:subscribe', { roomId: room.id });
       await emitWithAck(socketB, 'room:subscribe', { roomId: room.id });
@@ -172,7 +179,7 @@ describe('EventsGateway', () => {
     it('rejects an empty message with an ack error', async () => {
       const user = await createUser('emptysender@example.com');
       const room = await roomsService.createRoom(user.id, { name: 'EmptyMsg' });
-      const socket = await connectWithTicket(wsTicketService.issue(user.id));
+      const socket = await connectWithTicket(await wsTicketService.issue(user.id));
       await emitWithAck(socket, 'room:subscribe', { roomId: room.id });
 
       const ack = await emitWithAck<{ success: boolean; error?: string }>(socket, 'message:send', {
@@ -189,7 +196,7 @@ describe('EventsGateway', () => {
       const owner = await createUser('msgowner-ws@example.com');
       const outsider = await createUser('msgoutsider-ws@example.com');
       const room = await roomsService.createRoom(owner.id, { name: 'PrivateWs' });
-      const socket = await connectWithTicket(wsTicketService.issue(outsider.id));
+      const socket = await connectWithTicket(await wsTicketService.issue(outsider.id));
 
       const ack = await emitWithAck<{ success: boolean; error?: string }>(socket, 'message:send', {
         roomId: room.id,

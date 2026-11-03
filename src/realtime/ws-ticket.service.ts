@@ -1,22 +1,22 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import Redis from 'ioredis';
+import { REDIS } from '../redis/redis.constants';
+
+export const WS_TICKET_TTL_SEC = 30;
 
 @Injectable()
 export class WsTicketService {
-  private tickets = new Map<string, { userId: string; expiresAt: number }>();
+  constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
-  issue(userId: string, ttlMs = 30_000): string {
+  async issue(userId: string, ttlSec = WS_TICKET_TTL_SEC): Promise<string> {
     const ticket = randomBytes(24).toString('hex');
-    this.tickets.set(ticket, { userId, expiresAt: Date.now() + ttlMs });
+    await this.redis.set(`ws:ticket:${ticket}`, userId, 'EX', ttlSec);
     return ticket;
   }
 
-  consume(ticket: string): string | null {
-    const entry = this.tickets.get(ticket);
-    this.tickets.delete(ticket); // one-time use: delete regardless of outcome
-    if (!entry || entry.expiresAt < Date.now()) {
-      return null;
-    }
-    return entry.userId;
+  /** One-time: GETDEL reads and deletes atomically, so only one caller can win. */
+  async consume(ticket: string): Promise<string | null> {
+    return this.redis.getdel(`ws:ticket:${ticket}`);
   }
 }

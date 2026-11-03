@@ -45,7 +45,7 @@ export class AuthController {
 
   @Post('ws-ticket')
   @UseGuards(JwtAuthGuard)
-  wsTicket(@Req() req: { user: { id: string } }) {
-    return { ticket: this.wsTicketService.issue(req.user.id), expiresIn: 30 };
+  async wsTicket(@Req() req: { user: { id: string } }) {
+    return { ticket: await this.wsTicketService.issue(req.user.id), expiresIn: 30 };
   }
 }
