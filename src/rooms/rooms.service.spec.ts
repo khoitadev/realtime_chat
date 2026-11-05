@@ -229,6 +229,23 @@ describe('RoomsService', () => {
     });
   });
 
+  describe('isMember', () => {
+    it('returns true for a member and false for a non-member', async () => {
+      const owner = await createUser('im-owner@example.com');
+      const outsider = await createUser('im-outsider@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'IsMember' });
+
+      expect(await roomsService.isMember(owner.id, room.id)).toBe(true);
+      expect(await roomsService.isMember(outsider.id, room.id)).toBe(false);
+    });
+
+    it('returns false for a non-existent room', async () => {
+      const user = await createUser('im-lonely@example.com');
+
+      expect(await roomsService.isMember(user.id, 'does-not-exist')).toBe(false);
+    });
+  });
+
   describe('member lookups', () => {
     it('listMemberIds returns the userIds of every member of the room', async () => {
       const a = await createUser('lm-a@example.com');

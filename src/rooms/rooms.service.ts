@@ -55,11 +55,15 @@ export class RoomsService {
     return rows.map((r) => r.roomId);
   }
 
-  async assertMember(userId: string, roomId: string): Promise<void> {
+  async isMember(userId: string, roomId: string): Promise<boolean> {
     const membership = await this.prisma.roomMember.findUnique({
       where: { roomId_userId: { roomId, userId } },
     });
-    if (!membership) {
+    return membership !== null;
+  }
+
+  async assertMember(userId: string, roomId: string): Promise<void> {
+    if (!(await this.isMember(userId, roomId))) {
       throw new ForbiddenException('Not a member of this room');
     }
   }
