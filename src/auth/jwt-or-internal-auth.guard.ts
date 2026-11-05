@@ -14,7 +14,7 @@ export class JwtOrInternalAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     const secret = req.headers['x-internal-secret'];
 
-    if (secret === process.env.INTERNAL_SECRET) {
+    if (secret && secret === process.env.INTERNAL_SECRET) {
       const userId = req.headers['x-internal-user-id'];
       if (!userId || typeof userId !== 'string') {
         throw new UnauthorizedException('Missing X-Internal-User-Id');

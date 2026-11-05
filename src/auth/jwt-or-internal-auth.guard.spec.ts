@@ -59,4 +59,35 @@ describe('JwtOrInternalAuthGuard', () => {
 
     await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
+
+  it('does not bypass auth when x-internal-secret is missing but a crafted x-internal-user-id is sent', async () => {
+    // INTERNAL_SECRET is correctly set in the environment (beforeEach), but the attacker
+    // sends no x-internal-secret header at all while supplying a crafted user id. This must
+    // fall through to the JWT guard, not short-circuit via `undefined === undefined`.
+    const jwtGuard = {
+      canActivate: jest.fn().mockRejectedValue(new UnauthorizedException()),
+    } as unknown as JwtAuthGuard;
+    const guard = new JwtOrInternalAuthGuard(jwtGuard);
+    const context = contextWith({ 'x-internal-user-id': 'attacker-controlled-id' });
+
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+    expect(jwtGuard.canActivate).toHaveBeenCalledWith(context);
+    expect(context.switchToHttp().getRequest().user).toBeUndefined();
+  });
+
+  it('does not bypass auth when INTERNAL_SECRET is unset and a crafted x-internal-user-id is sent', async () => {
+    // Simulates a misconfigured deployment where INTERNAL_SECRET was never set. Without the
+    // `!secret` guard, `secret` (undefined) === process.env.INTERNAL_SECRET (undefined) would
+    // be true, granting access as an arbitrary attacker-chosen user with no secret at all.
+    delete process.env.INTERNAL_SECRET;
+    const jwtGuard = {
+      canActivate: jest.fn().mockRejectedValue(new UnauthorizedException()),
+    } as unknown as JwtAuthGuard;
+    const guard = new JwtOrInternalAuthGuard(jwtGuard);
+    const context = contextWith({ 'x-internal-user-id': 'attacker-controlled-id' });
+
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+    expect(jwtGuard.canActivate).toHaveBeenCalledWith(context);
+    expect(context.switchToHttp().getRequest().user).toBeUndefined();
+  });
 });
