@@ -1,12 +1,17 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Message, Room, RoomMember } from '@prisma/client';
+import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
+import { REDIS } from '../redis/redis.constants';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 
 @Injectable()
 export class RoomsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(REDIS) private readonly redis: Redis,
+  ) {}
 
   async createRoom(userId: string, dto: CreateRoomDto): Promise<Room> {
     return this.prisma.room.create({
@@ -70,9 +75,11 @@ export class RoomsService {
 
   async sendMessage(userId: string, roomId: string, dto: SendMessageDto): Promise<Message> {
     await this.assertMember(userId, roomId);
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: { roomId, senderId: userId, content: dto.content },
     });
+    await this.redis.publish('chat:message:new', JSON.stringify({ roomId, message }));
+    return message;
   }
 
   async getMessages(

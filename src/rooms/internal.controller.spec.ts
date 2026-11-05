@@ -2,10 +2,12 @@ import { randomUUID } from 'crypto';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AddressInfo } from 'net';
+import Redis from 'ioredis';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { InternalController } from './internal.controller';
 import { InternalAuthGuard } from '../auth/internal-auth.guard';
+import { REDIS } from '../redis/redis.constants';
 import { cleanDatabase } from '../../test/db-cleanup';
 
 describe('InternalController', () => {
@@ -13,13 +15,19 @@ describe('InternalController', () => {
   let prisma: PrismaService;
   let rooms: RoomsService;
   let baseUrl: string;
+  let redis: Redis;
   const OLD_SECRET = process.env.INTERNAL_SECRET;
 
   beforeAll(async () => {
     process.env.INTERNAL_SECRET = 'test-internal-secret';
     const moduleRef = await Test.createTestingModule({
       controllers: [InternalController],
-      providers: [RoomsService, PrismaService, InternalAuthGuard],
+      providers: [
+        RoomsService,
+        PrismaService,
+        InternalAuthGuard,
+        { provide: REDIS, useFactory: () => new Redis(process.env.REDIS_URL!) },
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -28,11 +36,13 @@ describe('InternalController', () => {
 
     prisma = moduleRef.get(PrismaService);
     rooms = moduleRef.get(RoomsService);
+    redis = moduleRef.get(REDIS);
     await prisma.$connect();
   });
 
   afterAll(async () => {
     await prisma.$disconnect();
+    await redis.quit();
     await app.close();
     process.env.INTERNAL_SECRET = OLD_SECRET;
   });

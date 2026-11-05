@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtOrInternalAuthGuard } from '../auth/jwt-or-internal-auth.guard';
 import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -36,6 +37,7 @@ export class RoomsController {
   }
 
   @Post(':roomId/messages')
+  @UseGuards(JwtOrInternalAuthGuard)
   sendMessage(
     @Req() req: { user: { id: string } },
     @Param('roomId') roomId: string,

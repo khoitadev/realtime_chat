@@ -1,26 +1,35 @@
 import { randomUUID } from 'crypto';
 import { Test } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import Redis from 'ioredis';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { REDIS } from '../redis/redis.constants';
 import { cleanDatabase } from '../../test/db-cleanup';
 
 describe('RoomsService', () => {
   let roomsService: RoomsService;
   let prisma: PrismaService;
+  let injectedRedis: Redis;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      providers: [RoomsService, PrismaService],
+      providers: [
+        RoomsService,
+        PrismaService,
+        { provide: REDIS, useFactory: () => new Redis(process.env.REDIS_URL!) },
+      ],
     }).compile();
 
     roomsService = moduleRef.get(RoomsService);
     prisma = moduleRef.get(PrismaService);
+    injectedRedis = moduleRef.get(REDIS);
     await prisma.$connect();
   });
 
   afterAll(async () => {
     await prisma.$disconnect();
+    await injectedRedis.quit();
   });
 
   beforeEach(async () => {
@@ -276,5 +285,60 @@ describe('RoomsService', () => {
       expect(await roomsService.listMemberIds('00000000-0000-0000-0000-000000000000')).toEqual([]);
       expect(await roomsService.listRoomIdsOf('00000000-0000-0000-0000-000000000000')).toEqual([]);
     });
+  });
+});
+
+describe('sendMessage Redis publish', () => {
+  let service: RoomsService;
+  let prisma: PrismaService;
+  let injectedRedis: Redis;
+  let redis: Redis;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        RoomsService,
+        PrismaService,
+        { provide: REDIS, useFactory: () => new Redis(process.env.REDIS_URL!) },
+      ],
+    }).compile();
+
+    service = moduleRef.get(RoomsService);
+    prisma = moduleRef.get(PrismaService);
+    injectedRedis = moduleRef.get(REDIS);
+    await prisma.$connect();
+
+    redis = new Redis(process.env.REDIS_URL!);
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+    await injectedRedis.quit();
+    await redis.quit();
+  });
+
+  beforeEach(async () => {
+    await cleanDatabase(prisma);
+  });
+
+  it('publishes {roomId, message} on chat:message:new after persisting', async () => {
+    const owner = randomUUID();
+    const room = await service.createRoom(owner, { name: 'PubSub' });
+
+    const sub = redis.duplicate();
+    await sub.subscribe('chat:message:new');
+    const received = new Promise<{ roomId: string; message: { content: string } }>((resolve) => {
+      sub.on('message', (_channel, raw) => resolve(JSON.parse(raw)));
+    });
+
+    const message = await service.sendMessage(owner, room.id, { content: 'hello pubsub' });
+
+    const payload = await received;
+    expect(payload.roomId).toBe(room.id);
+    expect(payload.message.content).toBe('hello pubsub');
+    expect(payload.message).toMatchObject({ id: message.id });
+
+    await sub.unsubscribe('chat:message:new');
+    await sub.quit();
   });
 });
