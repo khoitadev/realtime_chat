@@ -4,6 +4,7 @@ import { RoomsModule } from '../rooms/rooms.module';
 import { WsTicketService } from './ws-ticket.service';
 import { EventsGateway } from './events.gateway';
 import { PresenceController } from './presence.controller';
+import { WsTicketController } from './ws-ticket.controller';
 import {
   DEFAULT_PRESENCE_OPTIONS,
   PRESENCE_OPTIONS,
@@ -12,7 +13,7 @@ import {
 
 @Module({
   imports: [RoomsModule, PassportModule],
-  controllers: [PresenceController],
+  controllers: [PresenceController, WsTicketController],
   providers: [
     WsTicketService,
     EventsGateway,

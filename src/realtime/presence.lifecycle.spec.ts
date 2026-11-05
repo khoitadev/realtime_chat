@@ -39,6 +39,7 @@ describe('presence lifecycle (heartbeat, crash, shutdown)', () => {
   });
 
   afterAll(async () => {
+    await sleep(200); // let the server finish handling the clients' last disconnects before Redis closes
     await Promise.all(instances.map((i) => i.close().catch(() => undefined)));
   });
 

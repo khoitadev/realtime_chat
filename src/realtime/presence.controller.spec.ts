@@ -3,7 +3,7 @@ import { createInstance, TestInstance } from '../../test/instance';
 import { cleanDatabase } from '../../test/db-cleanup';
 import { cleanRedis } from '../../test/redis-cleanup';
 import { connectSocket } from '../../test/helpers';
-import { AuthService } from '../auth/auth.service';
+import { signToken } from '../../test/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { WsTicketService } from './ws-ticket.service';
@@ -36,11 +36,11 @@ describe('GET /rooms/:roomId/presence', () => {
   });
 
   async function registerUser(email: string) {
-    const { accessToken } = await app
-      .get<AuthService>(AuthService)
-      .register({ email, password: 'password123', displayName: email });
-    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
-    return { id: user.id, accessToken };
+    // Users no longer live in this service: only a user row for the FK (dropped in Task 7) and a signed token.
+    const user = await prisma.user.create({
+      data: { email, passwordHash: 'x', displayName: email },
+    });
+    return { id: user.id, accessToken: signToken(user.id) };
   }
 
   async function goOnline(userId: string) {

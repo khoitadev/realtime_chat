@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AddressInfo } from 'net';
 import Redis from 'ioredis';
+import { acquireJwksServer, releaseJwksServer } from './jwt';
 import { AppModule } from '../src/app.module';
 import { REDIS } from '../src/redis/redis.constants';
 import { RedisIoAdapter } from '../src/redis/redis-io.adapter';
@@ -21,6 +22,7 @@ export interface TestInstance {
 
 /** Boots a full app instance (real Postgres + real Redis + Redis adapter) on a random port. */
 export async function createInstance(presence: Partial<PresenceOptions> = {}): Promise<TestInstance> {
+  await acquireJwksServer();
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PRESENCE_OPTIONS)
     .useValue({ ...DEFAULT_PRESENCE_OPTIONS, ...presence })
@@ -38,6 +40,9 @@ export async function createInstance(presence: Partial<PresenceOptions> = {}): P
     url: `http://localhost:${port}`,
     redis,
     get: <T>(token: unknown) => app.get<T>(token as never),
-    close: () => app.close(),
+    close: async () => {
+      await app.close();
+      await releaseJwksServer();
+    },
   };
 }
