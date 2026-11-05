@@ -111,7 +111,7 @@ describe('migrateUsers (legacy chat DB -> auth_db)', () => {
     expect(await migrateUsers(legacyUrl, prisma)).toEqual({ users: 0, refreshTokens: 0 });
   });
 
-  it('fails reconciliation (and writes nothing) when a source row cannot be inserted', async () => {
+  it('fails reconciliation (non-zero exit; other rows stay committed, re-runnable) when a source row cannot be inserted', async () => {
     await seedLegacy(1, 0);
     // Same email already owned by a different id in the target: createMany skips it silently.
     const legacy = new Client({ connectionString: legacyUrl });
