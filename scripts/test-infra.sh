@@ -13,7 +13,7 @@ if ! pg_isready -q -p "$PG_PORT"; then
 fi
 
 su postgres -c "psql -p $PG_PORT -qtc \"ALTER USER postgres PASSWORD 'postgres'\"" >/dev/null
-for db in chat_dev chat_test; do
+for db in chat_dev chat_test auth_dev auth_test; do
   su postgres -c "psql -p $PG_PORT -tAc \"SELECT 1 FROM pg_database WHERE datname='$db'\"" | grep -q 1 \
     || su postgres -c "createdb -p $PG_PORT $db"
 done
@@ -29,6 +29,19 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:${PG_PORT}/chat_test"
 JWT_SECRET="test-secret"
 REDIS_URL="redis://localhost:${REDIS_PORT}/1"
 ENV
+fi
+
+if [ ! -f "$ROOT/auth-service/.env.test" ]; then
+  cat > "$ROOT/auth-service/.env.test" <<ENV
+DATABASE_URL="postgresql://postgres:postgres@localhost:${PG_PORT}/auth_test"
+ENV
+fi
+
+if [ ! -f "$ROOT/auth-service/.env" ]; then
+  {
+    echo "DATABASE_URL=\"postgresql://postgres:postgres@localhost:${PG_PORT}/auth_dev\""
+    "$ROOT/scripts/gen-jwt-keys.sh"
+  } > "$ROOT/auth-service/.env"
 fi
 
 echo "postgres:${PG_PORT} redis:${REDIS_PORT} ready"
