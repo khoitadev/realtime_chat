@@ -15,17 +15,21 @@ Rulings = technical decisions made without asking (allowed by the task brief). E
 | P4-R5 | Chat tests use a ref-counted real HTTP JWKS server (`acquireJwksServer`/`releaseJwksServer`) shared by app instances in one spec file. | Keeps verification real (no mocks) while avoiding leaked handles. |
 | P4-R6 | The chat-service cut-over is two commits: Task 6 (verification + ws-ticket, Prisma tables kept) then Task 7 (drop tables/FKs). | Every commit stays green; the FK to `User` would otherwise break specs between the steps. |
 | P4-R7 | `test-infra.sh` creates `auth_dev`/`auth_test` in the same native cluster and writes `auth-service/.env*`; `docker-compose.yml` gets separate Postgres services (ports 5435/5436). | No Docker in the cloud sandbox; Docker users still get isolated instances. |
+| P4-R8 | Task 2: `Jwk` is a `type` alias (assignable to `JsonWebKey`); `key.service.spec` stubs only config lookup via a `{get}` object. | Nest `ConfigService.get` reads `process.env` before internal config, so a real ConfigService would ignore the stub. |
+| P4-R9 | Tasks 3 and 5: no Rulings. | n/a |
+| P4-R10 | Task 6: explicit parameter types in `secretOrKeyProvider`; `await sleep(200)` in `presence.lifecycle.spec` afterAll. | `@types/passport-jwt` union typing needs explicit types; a disconnect handler publishing through the redis adapter raced with Redis closing (unhandled "Connection is closed"). Known latent issue: `EventsGateway.broadcastPresence` adapter publish rejection is not catchable by the caller; only bites when Redis closes while disconnects are in flight. |
+| P4-R11 | Task 4 follow-up: reconciliation test title clarified. | Other rows stay committed on mismatch; the script is re-runnable. |
 
 ## Task status
 
 | Task | Status | Notes |
 |---|---|---|
-| 1 Scaffold auth-service + infra | pending | |
-| 2 KeyService + JWKS endpoint | pending | |
-| 3 Move auth (RS256) | pending | |
-| 4 User migration script | pending | |
-| 5 JwksService + JWT test helpers | pending | |
-| 6 chat cut-over (verify + ws-ticket) | pending | |
-| 7 Drop User/RefreshToken + FKs | pending | |
-| 8 web BFF | pending | |
-| 9 Smoke + final verification | pending | |
+| 1 Scaffold auth-service + infra | done | |
+| 2 KeyService + JWKS endpoint | done | |
+| 3 Move auth (RS256) | done | |
+| 4 User migration script | done | |
+| 5 JwksService + JWT test helpers | done | |
+| 6 chat cut-over (verify + ws-ticket) | done | |
+| 7 Drop User/RefreshToken + FKs | done | |
+| 8 web BFF | done | |
+| 9 Smoke + final verification | done | |

@@ -34,7 +34,7 @@ chỉ giữ public key).
 - chat-service: `JwksService`, `JwtStrategy` mới (RS256 qua JWKS), `POST
   /ws-ticket` (chuyển từ `POST /auth/ws-ticket`), bỏ `User`/`RefreshToken`
   và FK khỏi Prisma schema + migration.
-- Script migrate dữ liệu `scripts/migrate-users-to-auth-db.ts` (có test).
+- Script migrate dữ liệu `auth-service/src/migration/migrate-users.ts` + CLI `auth-service/scripts/migrate-users-from-chat.ts` (có test).
 - Script sinh cặp key RS256 cho dev/test.
 - `web/`: thêm `AUTH_URL`; route đăng nhập/đăng ký/refresh gọi auth-service,
   còn lại gọi chat-service.
@@ -72,7 +72,7 @@ realtime-chat-v2/
 │   └── test/
 ├── scripts/
 │   ├── gen-jwt-keys.sh           # openssl → cặp key RS256
-│   └── migrate-users-to-auth-db.ts
+│   └── (migrate-users-from-chat.ts: xem auth-service/scripts/)
 ├── test/                         # helper test chat-service (key + JWKS server)
 └── web/                          # BFF: thêm AUTH_URL
 ```
@@ -107,7 +107,7 @@ realtime-chat-v2/
 
 - Cấu hình: `AUTH_JWKS_URL` (mặc định `http://localhost:3010/.well-known/jwks.json`),
   `JWT_ISSUER`, `JWT_AUDIENCE`.
-- `getKey(kid): Promise<KeyObject>`: tra cache; cache miss (kid lạ) → fetch lại
+- `getPublicKeyPem(kid): Promise<string>` (SPKI PEM): tra cache; cache miss (kid lạ) → fetch lại
   JWKS, nhưng **tối đa 1 lần / 10 giây** (chặn việc kẻ tấn công gửi token với
   `kid` ngẫu nhiên để dội auth-service). Cache theo TTL 10 phút.
 - Fetch thất bại (auth-service chưa lên): giữ cache cũ nếu có; nếu chưa có key
@@ -137,7 +137,7 @@ chỗ ở và URL.
 ### Thứ tự migrate (copy → chuyển traffic → drop)
 
 1. Tạo `auth_db`, chạy migration schema auth.
-2. `scripts/migrate-users-to-auth-db.ts`: đọc `User` + `RefreshToken` từ chat DB
+2. `auth-service/src/migration/migrate-users.ts` (CLI `auth-service/scripts/migrate-users-from-chat.ts`): đọc `User` + `RefreshToken` từ chat DB
    (`DATABASE_URL`), ghi vào `auth_db` (`AUTH_DATABASE_URL`) giữ nguyên `id`;
    idempotent (`upsert` / `skipDuplicates`), in số bản ghi đã copy và đối soát
    số lượng, thoát mã ≠ 0 nếu lệch.
@@ -213,18 +213,18 @@ mở WS bằng ticket.
 
 ## Tiêu chí hoàn thành Phase 4
 
-- [ ] `auth-service/` chạy độc lập với `auth_db`; register/login/refresh/logout
+- [x] `auth-service/` chạy độc lập với `auth_db`; register/login/refresh/logout
       /me hoạt động như Phase 1 (rotation + reuse detection còn nguyên).
-- [ ] Access token ký RS256 có `kid`, `iss`, `aud`; `GET
+- [x] Access token ký RS256 có `kid`, `iss`, `aud`; `GET
       /.well-known/jwks.json` công bố public key (không lộ thành phần private).
-- [ ] chat-service verify token chỉ bằng JWKS (không gọi auth-service mỗi
+- [x] chat-service verify token chỉ bằng JWKS (không gọi auth-service mỗi
       request); từ chối đúng các token sai chữ ký/hết hạn/sai iss/aud/alg.
-- [ ] `kid` lạ chỉ kích hoạt refetch có giới hạn tần suất; rotate key hoạt
+- [x] `kid` lạ chỉ kích hoạt refetch có giới hạn tần suất; rotate key hoạt
       động; auth-service chết thì chat-service vẫn phục vụ token đã có key.
-- [ ] Chat DB không còn bảng `User`/`RefreshToken` và FK; dữ liệu cũ được
+- [x] Chat DB không còn bảng `User`/`RefreshToken` và FK; dữ liệu cũ được
       migrate sang `auth_db` và đối soát khớp.
-- [ ] `POST /ws-ticket` ở chat-service thay `POST /auth/ws-ticket`; WS vẫn
+- [x] `POST /ws-ticket` ở chat-service thay `POST /auth/ws-ticket`; WS vẫn
       hoạt động với multi-instance + presence (Phase 3).
-- [ ] `web/` chạy end-to-end với hai backend.
-- [ ] `npx tsc --noEmit` sạch (chat-service, auth-service, `web/`); mọi test
+- [ ] `web/` chạy end-to-end với hai backend. (chỉ mới tsc sạch; chưa chạy trình duyệt)
+- [x] `npx tsc --noEmit` sạch (chat-service, auth-service, `web/`); mọi test
       của hai service pass với Postgres + Redis thật; smoke hai process pass.
