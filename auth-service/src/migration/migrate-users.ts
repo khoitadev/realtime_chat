@@ -18,6 +18,9 @@ export async function migrateUsers(
   const source = new Client({ connectionString: sourceUrl });
   await source.connect();
   try {
+    // One consistent snapshot of both tables (users and their tokens cannot skew).
+    // Writes to the source must still be frozen for the whole migration window.
+    await source.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const users = (
       await source.query(
         'SELECT "id","email","passwordHash","displayName","createdAt" FROM "User"',
@@ -35,6 +38,8 @@ export async function migrateUsers(
       expiresAt: Date;
       createdAt: Date;
     }>;
+
+    await source.query('COMMIT');
 
     await target.$transaction([
       target.user.createMany({ data: users, skipDuplicates: true }),

@@ -138,10 +138,15 @@ chỗ ở và URL.
 
 1. Tạo `auth_db`, chạy migration schema auth.
 2. `auth-service/src/migration/migrate-users.ts` (CLI `auth-service/scripts/migrate-users-from-chat.ts`): đọc `User` + `RefreshToken` từ chat DB
-   (`DATABASE_URL`), ghi vào `auth_db` (`AUTH_DATABASE_URL`) giữ nguyên `id`;
-   idempotent (`upsert` / `skipDuplicates`), in số bản ghi đã copy và đối soát
-   số lượng, thoát mã ≠ 0 nếu lệch.
-3. Chạy migration drop ở chat DB **sau** khi đối soát khớp.
+   (`SOURCE_DATABASE_URL`), ghi vào `auth_db` (`DATABASE_URL` của auth-service)
+   giữ nguyên `id`; đọc cả hai bảng trong một snapshot `REPEATABLE READ READ ONLY`;
+   idempotent (`skipDuplicates`), in số bản ghi đã copy và đối soát theo `id`
+   (không so nội dung), thoát mã ≠ 0 nếu lệch. Cần **đóng băng ghi** (đăng ký/đăng nhập)
+   ở chat-service trong suốt cửa sổ migrate; user tạo sau lần copy sẽ bị mất khi drop.
+   Script cần `pg` và `ts-node` (devDependencies của auth-service).
+3. Tạo bảng cờ xác nhận `_users_migrated_to_auth` sau khi đối soát khớp; migration
+   drop ở chat DB có **guard**: nếu `User` còn dữ liệu mà chưa có bảng cờ thì
+   `RAISE EXCEPTION` (DB rỗng/test không bị ảnh hưởng). Migration tự xoá bảng cờ khi xong.
 
 Migration drop là destructive: spec yêu cầu chạy script đối soát và có bản sao
 lưu trước khi áp dụng ở môi trường có dữ liệu thật.
@@ -225,6 +230,7 @@ mở WS bằng ticket.
       migrate sang `auth_db` và đối soát khớp.
 - [x] `POST /ws-ticket` ở chat-service thay `POST /auth/ws-ticket`; WS vẫn
       hoạt động với multi-instance + presence (Phase 3).
-- [ ] `web/` chạy end-to-end với hai backend. (chỉ mới tsc sạch; chưa chạy trình duyệt)
+- [x] `web/` chạy end-to-end với hai backend (đã kiểm tra bằng 3 process thật: register → rooms → ws-ticket → /chat,
+      và /chat với access token hỏng + refresh token hợp lệ được middleware refresh qua auth-service).
 - [x] `npx tsc --noEmit` sạch (chat-service, auth-service, `web/`); mọi test
       của hai service pass với Postgres + Redis thật; smoke hai process pass.

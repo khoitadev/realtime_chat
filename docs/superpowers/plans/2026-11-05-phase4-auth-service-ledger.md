@@ -19,6 +19,8 @@ Rulings = technical decisions made without asking (allowed by the task brief). E
 | P4-R9 | Tasks 3 and 5: no Rulings. | n/a |
 | P4-R10 | Task 6: explicit parameter types in `secretOrKeyProvider`; `await sleep(200)` in `presence.lifecycle.spec` afterAll. | `@types/passport-jwt` union typing needs explicit types; a disconnect handler publishing through the redis adapter raced with Redis closing (unhandled "Connection is closed"). Known latent issue: `EventsGateway.broadcastPresence` adapter publish rejection is not catchable by the caller; only bites when Redis closes while disconnects are in flight. |
 | P4-R11 | Task 4 follow-up: reconciliation test title clarified. | Other rows stay committed on mismatch; the script is re-runnable. |
+| P4-R12 | Branch review fixes: `web/middleware.ts` refreshed against chat-service (`/auth/refresh` no longer exists there) -> now `AUTH_URL`; chat drop-migration gets a guard (`RAISE EXCEPTION` while `User` has rows unless marker table `_users_migrated_to_auth` exists) plus the required order in comments, verified on a scratch DB; migrate-users reads both tables in one `REPEATABLE READ READ ONLY` snapshot; stale `JWT_SECRET` removed from test infra; spec updated (env var names, write-freeze, marker step). | Independent whole-branch review. Not done (minor): JWK `use`/`alg` filtering and per-key try/catch in JwksService, content-level reconciliation, smoke-script readiness polling, clock injection in jwks specs. |
+| P4-R13 | `web/` end-to-end was verified manually with 3 real processes (`next start` after rebuilding web/); no automated test for the BFF (exempt per Phase 2 spec). | tsc alone cannot catch routing mistakes such as the middleware one. |
 
 ## Task status
 

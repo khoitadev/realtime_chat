@@ -26,7 +26,6 @@ fi
 if [ ! -f "$ROOT/.env.test" ]; then
   cat > "$ROOT/.env.test" <<ENV
 DATABASE_URL="postgresql://postgres:postgres@localhost:${PG_PORT}/chat_test"
-JWT_SECRET="test-secret"
 REDIS_URL="redis://localhost:${REDIS_PORT}/1"
 ENV
 fi

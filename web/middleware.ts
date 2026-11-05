@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { NEST_URL } from './lib/nest';
+import { AUTH_URL } from './lib/auth';
 
 // Protects routes that render via a Server Component reading cookies()
 // directly (e.g. app/chat/page.tsx). Server Components cannot write cookies
@@ -39,7 +39,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const refreshRes = await fetch(`${NEST_URL}/auth/refresh`, {
+  const refreshRes = await fetch(`${AUTH_URL}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken }),
