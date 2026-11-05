@@ -5,12 +5,6 @@ import Redis from 'ioredis';
 import { acquireJwksServer, releaseJwksServer } from './jwt';
 import { AppModule } from '../src/app.module';
 import { REDIS } from '../src/redis/redis.constants';
-import { RedisIoAdapter } from '../src/redis/redis-io.adapter';
-import {
-  DEFAULT_PRESENCE_OPTIONS,
-  PRESENCE_OPTIONS,
-  PresenceOptions,
-} from '../src/realtime/presence.service';
 
 export interface TestInstance {
   app: INestApplication;
@@ -20,18 +14,14 @@ export interface TestInstance {
   close(): Promise<void>;
 }
 
-/** Boots a full app instance (real Postgres + real Redis + Redis adapter) on a random port. */
-export async function createInstance(presence: Partial<PresenceOptions> = {}): Promise<TestInstance> {
+/** Boots a full app instance (real Postgres + real Redis) on a random port. */
+export async function createInstance(): Promise<TestInstance> {
   await acquireJwksServer();
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(PRESENCE_OPTIONS)
-    .useValue({ ...DEFAULT_PRESENCE_OPTIONS, ...presence })
-    .compile();
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
   const app = moduleRef.createNestApplication();
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const redis = app.get<Redis>(REDIS);
-  app.useWebSocketAdapter(new RedisIoAdapter(app, redis));
   await app.listen(0);
 
   const port = (app.getHttpServer().address() as AddressInfo).port;

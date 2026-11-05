@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { RoomsModule } from './rooms/rooms.module';
-import { RealtimeModule } from './realtime/realtime.module';
+import { PresenceModule } from './realtime/presence.module';
 import { RedisModule } from './redis/redis.module';
 
 @Module({
@@ -13,7 +13,7 @@ import { RedisModule } from './redis/redis.module';
     PrismaModule,
     AuthModule,
     RoomsModule,
-    RealtimeModule,
+    PresenceModule,
   ],
 })
 export class AppModule {}
