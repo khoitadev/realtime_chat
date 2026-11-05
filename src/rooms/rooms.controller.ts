@@ -6,26 +6,29 @@ import { CreateRoomDto } from './dto/create-room.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 
 @Controller('rooms')
-@UseGuards(JwtAuthGuard)
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
   @Post()
+  @UseGuards(JwtAuthGuard)
   createRoom(@Req() req: { user: { id: string } }, @Body() dto: CreateRoomDto) {
     return this.roomsService.createRoom(req.user.id, dto);
   }
 
   @Post(':roomId/join')
+  @UseGuards(JwtAuthGuard)
   joinRoom(@Req() req: { user: { id: string } }, @Param('roomId') roomId: string) {
     return this.roomsService.joinRoom(req.user.id, roomId);
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   listRooms(@Req() req: { user: { id: string } }) {
     return this.roomsService.listRooms(req.user.id);
   }
 
   @Get(':roomId/messages')
+  @UseGuards(JwtAuthGuard)
   getMessages(
     @Req() req: { user: { id: string } },
     @Param('roomId') roomId: string,
