@@ -52,6 +52,33 @@ export function signToken(userId: string, opts: SignTokenOptions = {}): string {
   );
 }
 
+/** Classic algorithm-confusion forgery: HS256 signed with the public key as the secret. */
+export function signHs256WithPublicKey(userId: string, key: TestKey = defaultKey): string {
+  return new JwtService().sign(
+    { sub: userId },
+    {
+      secret: key.publicPem,
+      algorithm: 'HS256',
+      keyid: key.kid,
+      issuer: 'auth-service',
+      audience: 'realtime-chat',
+      expiresIn: 900,
+    },
+  );
+}
+
+export function unsignedToken(userId: string): string {
+  const enc = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const header = enc({ alg: 'none', typ: 'JWT', kid: defaultKey.kid });
+  const payload = enc({
+    sub: userId,
+    iss: 'auth-service',
+    aud: 'realtime-chat',
+    exp: Math.floor(Date.now() / 1000) + 900,
+  });
+  return `${header}.${payload}.`;
+}
+
 export interface JwksServer {
   url: string;
   hits(): number;
