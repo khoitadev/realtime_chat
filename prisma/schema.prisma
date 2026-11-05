@@ -7,31 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  displayName  String
-  createdAt    DateTime @default(now())
-
-  refreshTokens RefreshToken[]
-  rooms         RoomMember[]
-  messages      Message[]
-}
-
-model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String
-  tokenHash String    @unique
-  revokedAt DateTime?
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@index([userId])
-}
-
 model Room {
   id        String   @id @default(uuid())
   name      String
@@ -48,7 +23,6 @@ model RoomMember {
   joinedAt DateTime @default(now())
 
   room Room @relation(fields: [roomId], references: [id])
-  user User @relation(fields: [userId], references: [id])
 
   @@id([roomId, userId])
 }
@@ -60,8 +34,7 @@ model Message {
   content   String
   createdAt DateTime @default(now())
 
-  room   Room @relation(fields: [roomId], references: [id])
-  sender User @relation(fields: [senderId], references: [id])
+  room Room @relation(fields: [roomId], references: [id])
 
   @@index([roomId, createdAt, id])
 }

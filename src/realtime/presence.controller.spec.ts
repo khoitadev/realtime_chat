@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Socket as ClientSocket } from 'socket.io-client';
 import { createInstance, TestInstance } from '../../test/instance';
 import { cleanDatabase } from '../../test/db-cleanup';
@@ -35,12 +36,9 @@ describe('GET /rooms/:roomId/presence', () => {
     sockets.forEach((s) => s.disconnect());
   });
 
-  async function registerUser(email: string) {
-    // Users no longer live in this service: only a user row for the FK (dropped in Task 7) and a signed token.
-    const user = await prisma.user.create({
-      data: { email, passwordHash: 'x', displayName: email },
-    });
-    return { id: user.id, accessToken: signToken(user.id) };
+  async function registerUser(_email: string) {
+    const id = randomUUID();
+    return { id, accessToken: signToken(id) };
   }
 
   async function goOnline(userId: string) {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AddressInfo } from 'net';
@@ -56,7 +57,7 @@ describe('EventsGateway', () => {
   });
 
   async function createUser(email: string) {
-    return prisma.user.create({ data: { email, passwordHash: 'x', displayName: email } });
+    return { id: randomUUID(), email, displayName: email };
   }
 
   function connectWithTicket(ticket: string): Promise<ClientSocket> {

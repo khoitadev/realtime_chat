@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Test } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
@@ -27,9 +28,7 @@ describe('RoomsService', () => {
   });
 
   async function createUser(email: string) {
-    return prisma.user.create({
-      data: { email, passwordHash: 'x', displayName: email },
-    });
+    return { id: randomUUID(), email, displayName: email };
   }
 
   describe('createRoom', () => {

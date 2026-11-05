@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Socket as ClientSocket } from 'socket.io-client';
 import { createInstance, TestInstance } from '../../test/instance';
 import { cleanDatabase } from '../../test/db-cleanup';
@@ -43,7 +44,7 @@ describe('multi-instance realtime (2 app instances, 1 Redis, 1 Postgres)', () =>
   });
 
   async function createUser(email: string) {
-    return prisma.user.create({ data: { email, passwordHash: 'x', displayName: email } });
+    return { id: randomUUID(), email, displayName: email };
   }
 
   async function connectTo(instance: TestInstance, userId: string): Promise<ClientSocket> {

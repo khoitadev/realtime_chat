@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Socket as ClientSocket } from 'socket.io-client';
 import { createInstance, TestInstance } from '../../test/instance';
 import { cleanDatabase } from '../../test/db-cleanup';
@@ -29,7 +30,7 @@ describe('presence lifecycle (heartbeat, crash, shutdown)', () => {
   }
 
   async function createUser(email: string) {
-    return prisma.user.create({ data: { email, passwordHash: 'x', displayName: email } });
+    return { id: randomUUID(), email, displayName: email };
   }
 
   beforeAll(async () => {
