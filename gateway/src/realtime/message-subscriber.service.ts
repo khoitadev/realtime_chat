@@ -34,7 +34,7 @@ export class MessageSubscriberService implements OnModuleInit, OnModuleDestroy {
     this.sub.on('message', (_channel: string, raw: string) => {
       try {
         const { roomId, message } = JSON.parse(raw) as ChatMessagePayload;
-        this.gateway.server.to(roomId).emit('message:new', message);
+        this.gateway.server.local.to(roomId).emit('message:new', message);
       } catch (err) {
         this.logger.error(`failed to handle ${CHANNEL} payload: ${(err as Error).message}`);
       }
