@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+const INTERNAL_REQUEST_TIMEOUT_MS = 5000;
+
 @Injectable()
 export class InternalChatClient {
   private get baseUrl(): string {
@@ -13,7 +15,11 @@ export class InternalChatClient {
   async checkMembership(roomId: string, userId: string): Promise<boolean> {
     const res = await fetch(`${this.baseUrl}/internal/rooms/${roomId}/members/${userId}`, {
       headers: { 'x-internal-secret': this.secret },
+      signal: AbortSignal.timeout(INTERNAL_REQUEST_TIMEOUT_MS),
     });
+    if (!res.ok) {
+      throw new Error(`checkMembership failed: chat-service responded ${res.status}`);
+    }
     const body = (await res.json()) as { isMember: boolean };
     return body.isMember;
   }
@@ -21,7 +27,11 @@ export class InternalChatClient {
   async listRoomIds(userId: string): Promise<string[]> {
     const res = await fetch(`${this.baseUrl}/internal/users/${userId}/room-ids`, {
       headers: { 'x-internal-secret': this.secret },
+      signal: AbortSignal.timeout(INTERNAL_REQUEST_TIMEOUT_MS),
     });
+    if (!res.ok) {
+      throw new Error(`listRoomIds failed: chat-service responded ${res.status}`);
+    }
     const body = (await res.json()) as { roomIds: string[] };
     return body.roomIds;
   }
@@ -39,6 +49,7 @@ export class InternalChatClient {
         'x-internal-user-id': userId,
       },
       body: JSON.stringify({ content }),
+      signal: AbortSignal.timeout(INTERNAL_REQUEST_TIMEOUT_MS),
     });
 
     if (res.ok) {

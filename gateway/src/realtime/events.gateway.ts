@@ -114,12 +114,17 @@ export class EventsGateway implements OnGatewayInit, OnModuleDestroy {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { roomId: string },
   ): Promise<AckResponse> {
-    const isMember = await this.internalChatClient.checkMembership(body.roomId, client.data.userId);
-    if (!isMember) {
-      return { success: false, error: 'Not a member of this room' };
+    try {
+      const isMember = await this.internalChatClient.checkMembership(body.roomId, client.data.userId);
+      if (!isMember) {
+        return { success: false, error: 'Not a member of this room' };
+      }
+      await client.join(body.roomId);
+      return { success: true };
+    } catch (err) {
+      this.logger.error(`room:subscribe failed: ${(err as Error).message}`);
+      return { success: false, error: 'Service unavailable' };
     }
-    await client.join(body.roomId);
-    return { success: true };
   }
 
   @SubscribeMessage('message:send')
@@ -131,8 +136,12 @@ export class EventsGateway implements OnGatewayInit, OnModuleDestroy {
       return { success: false, error: 'content must not be empty' };
     }
 
-    const result = await this.internalChatClient.sendMessage(body.roomId, client.data.userId, body.content);
-    return result;
+    try {
+      return await this.internalChatClient.sendMessage(body.roomId, client.data.userId, body.content);
+    } catch (err) {
+      this.logger.error(`message:send failed: ${(err as Error).message}`);
+      return { success: false, error: 'Service unavailable' };
+    }
   }
 
   @SubscribeMessage('room:unsubscribe')
