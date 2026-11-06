@@ -1,9 +1,21 @@
 import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import {
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WsTicketService } from './ws-ticket.service';
 import { PRESENCE_OPTIONS, PresenceOptions, PresenceService } from './presence.service';
 import { InternalChatClient } from './internal-chat.client';
+
+interface AckResponse {
+  success: boolean;
+  error?: string;
+}
 
 @Injectable()
 @WebSocketGateway({ cors: true, transports: ['websocket'] })
@@ -95,5 +107,27 @@ export class EventsGateway implements OnGatewayInit, OnModuleDestroy {
     const roomIds = await this.internalChatClient.listRoomIds(userId);
     if (roomIds.length === 0) return;
     this.server.to(roomIds).emit('presence:update', { userId, online });
+  }
+
+  @SubscribeMessage('room:subscribe')
+  async handleSubscribe(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { roomId: string },
+  ): Promise<AckResponse> {
+    const isMember = await this.internalChatClient.checkMembership(body.roomId, client.data.userId);
+    if (!isMember) {
+      return { success: false, error: 'Not a member of this room' };
+    }
+    await client.join(body.roomId);
+    return { success: true };
+  }
+
+  @SubscribeMessage('room:unsubscribe')
+  async handleUnsubscribe(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { roomId: string },
+  ): Promise<AckResponse> {
+    await client.leave(body.roomId);
+    return { success: true };
   }
 }
