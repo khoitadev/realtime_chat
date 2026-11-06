@@ -13,10 +13,13 @@ export class InternalChatClient {
   }
 
   async checkMembership(roomId: string, userId: string): Promise<boolean> {
-    const res = await fetch(`${this.baseUrl}/internal/rooms/${roomId}/members/${userId}`, {
-      headers: { 'x-internal-secret': this.secret },
-      signal: AbortSignal.timeout(INTERNAL_REQUEST_TIMEOUT_MS),
-    });
+    const res = await fetch(
+      `${this.baseUrl}/internal/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(userId)}`,
+      {
+        headers: { 'x-internal-secret': this.secret },
+        signal: AbortSignal.timeout(INTERNAL_REQUEST_TIMEOUT_MS),
+      },
+    );
     if (!res.ok) {
       throw new Error(`checkMembership failed: chat-service responded ${res.status}`);
     }
@@ -25,7 +28,7 @@ export class InternalChatClient {
   }
 
   async listRoomIds(userId: string): Promise<string[]> {
-    const res = await fetch(`${this.baseUrl}/internal/users/${userId}/room-ids`, {
+    const res = await fetch(`${this.baseUrl}/internal/users/${encodeURIComponent(userId)}/room-ids`, {
       headers: { 'x-internal-secret': this.secret },
       signal: AbortSignal.timeout(INTERNAL_REQUEST_TIMEOUT_MS),
     });
@@ -41,7 +44,7 @@ export class InternalChatClient {
     userId: string,
     content: string,
   ): Promise<{ success: true } | { success: false; error: string }> {
-    const res = await fetch(`${this.baseUrl}/rooms/${roomId}/messages`, {
+    const res = await fetch(`${this.baseUrl}/rooms/${encodeURIComponent(roomId)}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
