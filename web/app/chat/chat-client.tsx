@@ -37,7 +37,7 @@ export function ChatClient({ initialRooms }: { initialRooms: Room[] }) {
     // callback below. There's no async gap before the socket exists, so a
     // fast unmount is handled entirely by calling socket.disconnect() in the
     // cleanup below, which is safe to call regardless of connection state.
-    const socket = io(process.env.NEXT_PUBLIC_NEST_URL ?? 'http://localhost:3000', {
+    const socket = io(process.env.NEXT_PUBLIC_GATEWAY_URL ?? 'http://localhost:3020', {
       transports: ['websocket'], // no sticky sessions needed behind a load balancer
       auth: (cb) => {
         fetch('/api/ws-ticket')

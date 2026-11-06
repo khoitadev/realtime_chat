@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { NEST_URL } from '../../lib/nest';
+import { GATEWAY_URL } from '../../lib/gateway';
 import { ChatClient } from './chat-client';
 
 interface Room {
@@ -14,7 +14,7 @@ export default async function ChatPage() {
     redirect('/login');
   }
 
-  const res = await fetch(`${NEST_URL}/rooms`, {
+  const res = await fetch(`${GATEWAY_URL}/rooms`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: 'no-store',
   });

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AUTH_URL } from '../../../lib/auth';
+import { GATEWAY_URL } from '../../../lib/gateway';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const nestResponse = await fetch(`${AUTH_URL}/auth/login`, {
+  const nestResponse = await fetch(`${GATEWAY_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

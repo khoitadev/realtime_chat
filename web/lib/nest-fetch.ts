@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers';
-import { NEST_URL } from './nest';
-import { AUTH_URL } from './auth';
+import { GATEWAY_URL } from './gateway';
 
 // nestFetch is only ever called from inside Next.js Route Handlers
 // (web/app/api/.../route.ts), where cookies() from next/headers is writable:
@@ -15,7 +14,7 @@ export async function nestFetch(path: string, init: RequestInit = {}): Promise<R
   const refreshToken = cookieStore.get('refresh_token')?.value;
 
   const doFetch = (token?: string) =>
-    fetch(`${NEST_URL}${path}`, {
+    fetch(`${GATEWAY_URL}${path}`, {
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${token ?? ''}` },
     });
@@ -23,7 +22,7 @@ export async function nestFetch(path: string, init: RequestInit = {}): Promise<R
   let response = await doFetch(accessToken);
 
   if (response.status === 401 && refreshToken) {
-    const refreshRes = await fetch(`${AUTH_URL}/auth/refresh`, {
+    const refreshRes = await fetch(`${GATEWAY_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
