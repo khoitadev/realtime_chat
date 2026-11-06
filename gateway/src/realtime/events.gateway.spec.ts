@@ -120,6 +120,58 @@ describe('EventsGateway', () => {
     });
   });
 
+  describe('message:send', () => {
+    function emitWithAck<T>(socket: ClientSocket, event: string, payload: unknown): Promise<T> {
+      return new Promise((resolve) => socket.emit(event, payload, resolve));
+    }
+
+    it('acks success when the stub accepts the send', async () => {
+      const userId = randomUUID();
+      const roomId = randomUUID();
+      stub.setSendMessageBehavior(() => ({ ok: true }));
+      const socket = await connectWithTicket(await wsTicketService.issue(userId));
+
+      const ack = await emitWithAck<{ success: boolean }>(socket, 'message:send', {
+        roomId,
+        content: 'hello',
+      });
+
+      expect(ack.success).toBe(true);
+      socket.disconnect();
+    });
+
+    it('rejects empty content without calling the internal client', async () => {
+      const socket = await connectWithTicket(await wsTicketService.issue(randomUUID()));
+
+      const ack = await emitWithAck<{ success: boolean; error?: string }>(socket, 'message:send', {
+        roomId: randomUUID(),
+        content: '   ',
+      });
+
+      expect(ack.success).toBe(false);
+      expect(ack.error).toBe('content must not be empty');
+      socket.disconnect();
+    });
+
+    it("surfaces the stub's rejection as an ack error", async () => {
+      stub.setSendMessageBehavior(() => ({
+        ok: false,
+        status: 403,
+        error: 'Not a member of this room',
+      }));
+      const socket = await connectWithTicket(await wsTicketService.issue(randomUUID()));
+
+      const ack = await emitWithAck<{ success: boolean; error?: string }>(socket, 'message:send', {
+        roomId: randomUUID(),
+        content: 'intruder',
+      });
+
+      expect(ack.success).toBe(false);
+      expect(ack.error).toBe('Not a member of this room');
+      socket.disconnect();
+    });
+  });
+
   describe('presence', () => {
     function emitWithAck<T>(socket: ClientSocket, event: string, payload: unknown): Promise<T> {
       return new Promise((resolve) => socket.emit(event, payload, resolve));

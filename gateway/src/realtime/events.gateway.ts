@@ -122,6 +122,19 @@ export class EventsGateway implements OnGatewayInit, OnModuleDestroy {
     return { success: true };
   }
 
+  @SubscribeMessage('message:send')
+  async handleMessageSend(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { roomId: string; content: string },
+  ): Promise<AckResponse> {
+    if (!body?.content || typeof body.content !== 'string' || !body.content.trim()) {
+      return { success: false, error: 'content must not be empty' };
+    }
+
+    const result = await this.internalChatClient.sendMessage(body.roomId, client.data.userId, body.content);
+    return result;
+  }
+
   @SubscribeMessage('room:unsubscribe')
   async handleUnsubscribe(
     @ConnectedSocket() client: Socket,
