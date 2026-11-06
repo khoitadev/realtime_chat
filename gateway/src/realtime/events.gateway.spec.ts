@@ -131,7 +131,9 @@ describe('EventsGateway', () => {
       stub.setRoomIds(userId, [roomId]);
       stub.setMember(roomId, userId, true);
 
-      const watcherTicket = await wsTicketService.issue(randomUUID());
+      const watcherUserId = randomUUID();
+      stub.setMember(roomId, watcherUserId, true);
+      const watcherTicket = await wsTicketService.issue(watcherUserId);
       const watcher = await connectWithTicket(watcherTicket);
       await emitWithAck(watcher, 'room:subscribe', { roomId });
 
