@@ -21,6 +21,8 @@ export interface ChatStub {
   /** Configures how POST /rooms/:roomId/messages responds: accept, or a given status + error body. */
   setSendMessageBehavior(fn: (roomId: string, userId: string, content: string) => StubSendResult): void;
   lastInternalHeaders(): { secret?: string; userId?: string } | undefined;
+  /** The x-correlation-id header of the most recent POST /rooms/:roomId/messages. */
+  lastCorrelationId(): string | undefined;
   close(): Promise<void>;
 }
 
@@ -39,6 +41,7 @@ export async function startChatStub(): Promise<ChatStub> {
     ok: true,
   });
   let lastHeaders: { secret?: string; userId?: string } | undefined;
+  let lastCorrelation: string | undefined;
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://stub');
@@ -66,6 +69,7 @@ export async function startChatStub(): Promise<ChatStub> {
     const messagesMatch = url.pathname.match(/^\/rooms\/([^/]+)\/messages$/);
     if (messagesMatch && req.method === 'POST') {
       const [, roomId] = messagesMatch;
+      lastCorrelation = req.headers['x-correlation-id'] as string | undefined;
       const userId = req.headers['x-internal-user-id'] as string;
       const body = JSON.parse((await readBody(req)) || '{}') as { content: string };
       const result = sendBehavior(roomId, userId, body.content);
@@ -102,6 +106,7 @@ export async function startChatStub(): Promise<ChatStub> {
       sendBehavior = fn;
     },
     lastInternalHeaders: () => lastHeaders,
+    lastCorrelationId: () => lastCorrelation,
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();

@@ -140,6 +140,24 @@ describe('EventsGateway', () => {
       socket.disconnect();
     });
 
+    it('sends each message to chat-service with a fresh uuid correlation id', async () => {
+      const userId = randomUUID();
+      const roomId = randomUUID();
+      stub.setSendMessageBehavior(() => ({ ok: true }));
+      const socket = await connectWithTicket(await wsTicketService.issue(userId));
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+      await emitWithAck(socket, 'message:send', { roomId, content: 'one' });
+      const first = stub.lastCorrelationId();
+      await emitWithAck(socket, 'message:send', { roomId, content: 'two' });
+      const second = stub.lastCorrelationId();
+
+      expect(first).toMatch(uuidRe);
+      expect(second).toMatch(uuidRe);
+      expect(first).not.toBe(second);
+      socket.disconnect();
+    });
+
     it('rejects empty content without calling the internal client', async () => {
       const socket = await connectWithTicket(await wsTicketService.issue(randomUUID()));
 

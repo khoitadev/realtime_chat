@@ -83,6 +83,16 @@ describe('InternalChatClient', () => {
     expect(stub.lastInternalHeaders()?.userId).toBe(userId);
   });
 
+  it('sendMessage sends x-correlation-id when given and omits it otherwise', async () => {
+    stub.setSendMessageBehavior(() => ({ ok: true }));
+
+    await client.sendMessage(randomUUID(), randomUUID(), 'hi', 'corr-9');
+    expect(stub.lastCorrelationId()).toBe('corr-9');
+
+    await client.sendMessage(randomUUID(), randomUUID(), 'hi');
+    expect(stub.lastCorrelationId()).toBeUndefined();
+  });
+
   it("sendMessage surfaces the stub's error message on failure", async () => {
     const roomId = randomUUID();
     const userId = randomUUID();

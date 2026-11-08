@@ -7,6 +7,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { randomUUID } from 'crypto';
 import { Server, Socket } from 'socket.io';
 import { WsTicketService } from './ws-ticket.service';
 import { PRESENCE_OPTIONS, PresenceOptions, PresenceService } from './presence.service';
@@ -137,7 +138,12 @@ export class EventsGateway implements OnGatewayInit, OnModuleDestroy {
     }
 
     try {
-      return await this.internalChatClient.sendMessage(body.roomId, client.data.userId, body.content);
+      return await this.internalChatClient.sendMessage(
+        body.roomId,
+        client.data.userId,
+        body.content,
+        randomUUID(),
+      );
     } catch (err) {
       this.logger.error(`message:send failed: ${(err as Error).message}`);
       return { success: false, error: 'Service unavailable' };

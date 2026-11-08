@@ -43,6 +43,7 @@ export class InternalChatClient {
     roomId: string,
     userId: string,
     content: string,
+    correlationId?: string,
   ): Promise<{ success: true } | { success: false; error: string }> {
     const res = await fetch(`${this.baseUrl}/rooms/${encodeURIComponent(roomId)}/messages`, {
       method: 'POST',
@@ -50,6 +51,7 @@ export class InternalChatClient {
         'Content-Type': 'application/json',
         'x-internal-secret': this.secret,
         'x-internal-user-id': userId,
+        ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
       },
       body: JSON.stringify({ content }),
       signal: AbortSignal.timeout(INTERNAL_REQUEST_TIMEOUT_MS),
