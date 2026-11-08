@@ -17,6 +17,7 @@ Phase này sửa đúng từ đầu các lỗi đã phát hiện ở bản gốc
 | Idempotency: set key **trước** side-effect, side-effect fail thì key vẫn còn → retry bị bỏ qua, mất thông báo | Claim → side-effect → đánh dấu `done` **sau** khi thành công; fail thì **nhả** key |
 | `prefetch` không đặt → nhiều message xử lý đồng thời, thứ tự không xác định | `prefetch=1`, xử lý tuần tự |
 | Retry bằng `setTimeout` trong RAM → crash là mất | Retry bền ở broker: TTL queue + dead-letter |
+| Mất event khi broker chết / crash giữa commit và publish | Outbox trong chat DB + relay (at-least-once), consumer khử trùng bằng `eventId` |
 | Event không có `correlationId` → không lần vết được xuyên service | `correlationId` trong payload + log + header webhook |
 
 ## Quyết định đã chốt (brainstorm)
@@ -24,7 +25,7 @@ Phase này sửa đúng từ đầu các lỗi đã phát hiện ở bản gốc
 | Chủ đề | Quyết định | Phương án đã loại |
 |---|---|---|
 | Side-effect của consumer | Gọi webhook HTTP ra ngoài (`PUSH_WEBHOOK_URL`), **không có DB riêng**; idempotency bằng Redis | Lưu in-app notification vào `notification_db` (idempotency tự nhiên nhờ unique, mất bài học); làm cả hai (quá lớn) |
-| Publish từ chat-service | Publisher confirms, best-effort; lỗi publish chỉ log/đếm, không làm hỏng việc gửi message; ghi known limitation | Transactional outbox (sub-project riêng) |
+| Publish từ chat-service | **Transactional outbox**: ghi `OutboxEvent` cùng transaction với `Message`; relay đọc outbox, publish có confirm, đánh dấu đã gửi → at-least-once từ commit đến broker, không mất event | Publish best-effort ngay trong request (mất event khi crash/broker chết) |
 | Retry | 3 retry queue theo bậc (5s / 30s / 5m, TTL cố định theo queue) + DLQ | 1 queue delay cố định; per-message TTL (head-of-line blocking) |
 | Prefetch | `prefetch=1`, xử lý tuần tự | prefetch lớn (thứ tự không xác định) |
 
@@ -33,14 +34,16 @@ Phase này sửa đúng từ đầu các lỗi đã phát hiện ở bản gốc
 **Có trong Phase 6:**
 - `notification-service/`: project NestJS độc lập (application context, không
   HTTP), consumer, topology broker, idempotency Redis, webhook client.
-- chat-service: `RabbitMqModule` (publisher có confirm), publish
-  `message.created` trong `RoomsService.sendMessage`, đọc/sinh `correlationId`.
+- chat-service: bảng `OutboxEvent` + migration, ghi outbox **cùng transaction**
+  với `Message` trong `RoomsService.sendMessage`, `OutboxRelay` (publish có confirm,
+  đánh dấu đã gửi, backoff, dọn dẹp), `RabbitMqModule`, đọc/sinh `correlationId`.
 - gateway: sinh và forward `X-Correlation-Id` (proxy REST + `InternalChatClient`).
 - Hạ tầng: `rabbitmq` trong `docker-compose.yml`; `scripts/test-infra.sh` cài/khởi
   động RabbitMQ native, tạo vhost `chat_test` + user test.
 
 **Không có trong Phase 6:**
-- Outbox / đảm bảo at-least-once từ đầu đến cuối phía publisher.
+- Đảm bảo exactly-once (at-least-once + khử trùng bằng `eventId` là mức đã chọn).
+- Mất dữ liệu ở chính Postgres hoặc RabbitMQ không bền (dùng queue durable + message persistent + confirm).
 - Lọc người nhận theo presence (đang online thì không cần thông báo), web push,
   unread count — Phase 10.
 - Provider thật (email/FCM): webhook là giả lập.
@@ -73,9 +76,11 @@ realtime-chat-v2/
 ├── src/                               # chat-service
 │   ├── messaging/                     # MỚI
 │   │   ├── rabbitmq.module.ts
-│   │   ├── event.publisher.ts         # confirm channel, persistent
+│   │   ├── event.publisher.ts         # confirm channel, persistent (dùng bởi relay)
+│   │   ├── outbox.relay.ts            # poll OutboxEvent, publish, mark published
 │   │   └── events.ts                  # type MessageCreatedEvent
-│   └── rooms/rooms.service.ts         # sendMessage: publish message.created
+│   └── rooms/rooms.service.ts         # sendMessage: Message + OutboxEvent trong 1 transaction
+├── prisma/schema.prisma               # + model OutboxEvent (+ migration)
 ├── gateway/                           # forward X-Correlation-Id
 └── scripts/test-infra.sh, docker-compose.yml
 ```
@@ -108,20 +113,79 @@ realtime-chat-v2/
 - Consumer chấp nhận `version === 1`; version khác hoặc thiếu field → DLQ
   (không retry), xem "Consumer".
 
-### Publisher (chat-service)
+### Outbox (chat-service) — không mất event
+
+Vấn đề: lưu DB rồi publish là hai thao tác không cùng transaction; crash hoặc
+broker chết giữa hai bước thì mất event. Giải pháp: **ghi event vào bảng outbox
+cùng transaction với message**, một relay riêng đưa nó lên broker.
+
+```prisma
+model OutboxEvent {
+  id            String    @id            // = eventId (uuid)
+  type          String                   // 'message.created'
+  payload       Json                     // event đầy đủ (kể cả correlationId)
+  createdAt     DateTime  @default(now())
+  publishedAt   DateTime?
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+
+  @@index([publishedAt, nextAttemptAt, createdAt])
+}
+```
+
+**Ghi (trong `RoomsService.sendMessage`):**
+
+```
+prisma.$transaction(async (tx) => {
+  message  = tx.message.create(...)
+  members  = tx.roomMember.findMany({ roomId })       // recipientIds = trừ người gửi
+  if (recipientIds.length > 0 && outboxEnabled)
+    tx.outboxEvent.create({ id: eventId, type, payload })
+  return message
+})
+```
+
+Message và event cùng commit hoặc cùng rollback; request **không còn gọi broker**.
+Sau khi commit, `relay.kick()` đánh thức relay ngay (giảm độ trễ), nhưng độ bền
+không phụ thuộc vào việc kick.
+
+**Relay (`OutboxRelay`, chạy trong tiến trình chat-service):**
+
+- Vòng lặp mỗi `OUTBOX_POLL_MS` (mặc định 500ms) + khi được `kick()`. Không chạy
+  chồng lượt (một lượt chạy tại một thời điểm trong một tiến trình).
+- Mỗi lượt, trong một transaction ngắn:
+  `SELECT … FROM "OutboxEvent" WHERE "publishedAt" IS NULL AND "nextAttemptAt" <= now()
+  ORDER BY "createdAt","id" LIMIT 50 FOR UPDATE SKIP LOCKED`. `SKIP LOCKED` cho phép
+  nhiều instance chat-service chạy relay song song mà không giành nhau cùng một dòng.
+- Với từng dòng, theo thứ tự: publish lên `chat.events` (confirm, timeout 2s) → nếu
+  thành công `UPDATE … SET "publishedAt" = now()`; nếu lỗi `attempts += 1`,
+  `lastError`, `nextAttemptAt = now() + min(2^attempts s, 30s)` và **dừng lượt** (broker
+  có vẻ đang chết, không cần thử các dòng sau). Commit transaction.
+- **At-least-once:** nếu tiến trình chết sau khi broker confirm nhưng trước khi commit
+  `publishedAt`, dòng được publish lại với **cùng `eventId`**. Consumer khử trùng
+  bằng idempotency (xem bên dưới) nên hiệu ứng ra ngoài vẫn một lần.
+- Broker chết lâu: dòng chưa gửi nằm lại trong outbox (bền trong Postgres), message của
+  user vẫn gửi bình thường; khi broker sống lại relay tự gửi bù theo thứ tự `createdAt`.
+- Dọn dẹp: mỗi giờ xoá dòng đã `publishedAt` cũ hơn `OUTBOX_RETENTION_HOURS` (mặc định
+  24). Dòng chưa gửi **không bao giờ** bị xoá.
+- Quan sát: log `warn` kèm số dòng đang chờ và tuổi dòng cũ nhất khi relay thất bại; hàm
+  `pendingCount()`/`oldestPendingAgeMs()` để test và để Phase 9 gắn metric.
+- Thứ tự: relay giữ thứ tự `createdAt` trong một lượt; nhiều instance song song hoặc
+  retry có thể làm đảo thứ tự. Chấp nhận (thông báo không cần thứ tự chặt).
+
+**Publisher (`EventPublisher`, dùng bởi relay):**
 
 - `amqplib` confirm channel, kết nối từ `AMQP_URL`.
 - Exchange `chat.events` (topic, durable). Routing key `message.created`.
   Message `persistent: true`, `contentType: application/json`, header
-  `x-correlation-id`.
-- `publish()` chờ confirm với timeout (mặc định 2s). Lỗi/timeout → log
-  `warn` + tăng bộ đếm, **không throw** — việc gửi message của user vẫn thành
-  công. Đây là **known limitation**: crash giữa lúc commit DB và lúc publish,
-  hoặc broker chết, làm mất event (outbox để sau nếu cần).
-- Kết nối tự khôi phục sau khi broker khởi động lại (publisher tạo lại channel
-  khi `close`/`error`); trong lúc mất kết nối, publish bị bỏ qua (log).
-- Thiếu `AMQP_URL` (dev không chạy RabbitMQ) → publisher ở chế độ no-op, log
-  một lần lúc khởi động; chat-service vẫn chạy.
+  `x-correlation-id`, `messageId = eventId`.
+- Publish chờ confirm với timeout (mặc định 2s); lỗi/timeout → ném lỗi cho relay xử lý
+  (relay mới là nơi nuốt lỗi, không phải request của user).
+- Tự khôi phục kết nối/channel sau khi broker khởi động lại.
+- Thiếu `AMQP_URL` (dev không chạy RabbitMQ): relay **không chạy** và
+  `sendMessage` **không ghi outbox** (log một lần lúc khởi động) để bảng không phình
+  vô hạn; chat-service vẫn chạy bình thường. Có `AMQP_URL` thì outbox luôn được ghi.
 
 ### `correlationId`
 
@@ -129,7 +193,8 @@ realtime-chat-v2/
   `[A-Za-z0-9._-]`), nếu không thì sinh UUID. Forward header này trong
   `ProxyController` và trong `InternalChatClient` (đường WS `message:send`).
 - chat-service: `RoomsController`/internal đọc `X-Correlation-Id`, truyền vào
-  `RoomsService.sendMessage`; thiếu thì sinh UUID. Đưa vào event.
+  `RoomsService.sendMessage`; thiếu thì sinh UUID. Đưa vào `payload` của outbox
+  (nên không đổi khi event được publish lại).
 - notification-service: log mọi dòng kèm `correlationId` và gửi header
   `X-Correlation-Id` sang webhook.
 
@@ -236,15 +301,27 @@ Không mock Prisma / Redis / RabbitMQ / socket / HTTP. Hạ tầng test: Postgre
 Redis, **RabbitMQ thật**. Webhook sink là **HTTP server thật** chạy local với
 chế độ lỗi lập trình được (tầng mạng, như JWKS server Phase 4).
 
-**chat-service (publisher):**
-- `sendMessage` publish đúng 1 event `message.created`: schema đúng, `recipientIds`
-  = member trừ người gửi, `preview` cắt 100 ký tự, `correlationId` lấy từ header
-  hoặc tự sinh, message persistent.
-- Room chỉ có người gửi → không publish.
-- Broker không khả dụng → `sendMessage` vẫn thành công, message đã lưu DB, có log
-  warn (không throw).
-- Không cấu hình `AMQP_URL` → no-op, chat-service chạy bình thường.
-- Cả đường REST và đường internal (gateway) đều publish.
+**chat-service (outbox + relay):**
+- `sendMessage` ghi đúng 1 `OutboxEvent` cùng transaction với `Message`: payload đúng
+  schema, `id = eventId`, `recipientIds` = member trừ người gửi, `preview` cắt 100 ký tự,
+  `correlationId` lấy từ header hoặc tự sinh.
+- **Atomicity (DB thật, không mock):** thêm tạm ràng buộc `CHECK (false)` vào
+  `"OutboxEvent"` → `sendMessage` ném lỗi **và `Message` không được lưu** (rollback);
+  bỏ ràng buộc sau test.
+- Room chỉ có người gửi → không ghi outbox.
+- Relay publish lên RabbitMQ thật: event xuất hiện ở `notifications.work` với `messageId =
+  eventId`, `persistent`, header `x-correlation-id`; dòng được đánh dấu `publishedAt`.
+- **Broker chết không mất event:** dừng broker (hoặc trỏ relay sang cổng không tồn tại)
+  rồi gửi N message → `sendMessage` vẫn thành công, N dòng outbox chờ, `attempts` tăng và
+  `nextAttemptAt` lùi (backoff); bật broker lại → cả N event được publish bù, đúng thứ tự
+  `createdAt`, mỗi event một lần, dòng được đánh dấu đã gửi.
+- **At-least-once:** đặt lại `publishedAt = NULL` cho dòng đã gửi (mô phỏng crash trước
+  khi commit) → relay publish lại với **cùng `eventId`**.
+- **Hai relay song song** (hai instance cùng outbox) → mỗi event được publish **một lần**
+  (`SKIP LOCKED`), không dòng nào bị kẹt.
+- Dọn dẹp: dòng đã gửi cũ hơn retention bị xoá; dòng chưa gửi (kể cả rất cũ) không bị xoá.
+- Không cấu hình `AMQP_URL` → không ghi outbox, relay không chạy, `sendMessage` bình thường.
+- Cả đường REST và đường internal (gateway) đều ghi outbox.
 
 **gateway:** `X-Correlation-Id` được forward qua proxy và `InternalChatClient`;
 sinh mới khi thiếu; giá trị không hợp lệ bị thay bằng UUID.
@@ -276,28 +353,38 @@ sinh mới khi thiếu; giá trị không hợp lệ bị thay bằng UUID.
 **Smoke cuối (thủ công):** chạy auth-service, chat-service, gateway,
 notification-service + webhook sink: gửi message qua gateway (REST và WS), thấy
 webhook nhận đúng 1 request cho mỗi recipient với cùng `correlationId` xuyên suốt;
-tắt sink → thấy retry theo tier (TTL ngắn), bật lại → giao thành công.
+tắt sink → thấy retry theo tier (TTL ngắn), bật lại → giao thành công; tắt
+RabbitMQ, gửi message, bật lại → event được gửi bù và webhook nhận đúng 1 lần.
 
 **Không cần TDD:** `main.ts` bootstrap, `docker-compose.yml`,
 `scripts/test-infra.sh`.
 
 ## Rủi ro và đánh đổi
 
-- **Mất event phía publisher** khi crash giữa commit và publish, hoặc broker chết
-  (đã chấp nhận; outbox là bước sau).
-- **Gửi trùng hiếm** khi worker chết sau webhook thành công, trước `complete`.
+- **Outbox thêm tải cho Postgres** (một INSERT mỗi message + poll + dọn dẹp) và một
+  worker nền trong chat-service; relay chạy chậm thì độ trễ thông báo tăng (message của
+  user không bị ảnh hưởng).
+- **Outbox có thể phình** nếu broker chết lâu (dòng chưa gửi không bị xoá); `pendingCount`
+  để theo dõi, cảnh báo thật ở Phase 9.
+- **Gửi trùng hiếm**: (a) relay chết sau confirm, trước khi đánh dấu → publish lại cùng
+  `eventId` (consumer khử trùng); (b) worker chết sau webhook thành công, trước
+  `complete` (header `Idempotency-Key` giúp provider khử trùng).
 - **Thứ tự**: retry làm đảo thứ tự thông báo.
 - **Thông báo cho cả người đang online** (chưa lọc theo presence) — có thể ồn.
 - **Đổi TTL retry** cần tạo lại queue (argument không đổi được tại chỗ).
-- **Phụ thuộc mới ở runtime**: RabbitMQ. chat-service vẫn phục vụ khi thiếu
-  broker (publish no-op/log); notification-service thì không chạy được.
+- **Phụ thuộc mới ở runtime**: RabbitMQ. chat-service vẫn phục vụ khi broker chết (event
+  nằm trong outbox, gửi bù sau); notification-service thì không chạy được.
+- **Migration** thêm bảng vào chat DB (không phá dữ liệu, không destructive).
 - Webhook là giả lập; chưa có provider thật, chưa có rate limit hay circuit
   breaker cho lời gọi ra ngoài.
 
 ## Tiêu chí hoàn thành Phase 6
 
-- [ ] `message.created` được publish đúng schema (có `eventId`, `correlationId`,
-      `recipientIds`) cho cả REST và WS; lỗi publish không làm hỏng việc gửi.
+- [ ] Event được ghi vào outbox **cùng transaction** với message (rollback cùng nhau),
+      đúng schema (`eventId`, `correlationId`, `recipientIds`), cho cả REST và WS.
+- [ ] **Không mất event:** broker chết thì message vẫn gửi được, event nằm lại trong
+      outbox và được gửi bù khi broker sống lại; crash trước khi đánh dấu thì publish lại
+      cùng `eventId`; hai relay song song không publish trùng.
 - [ ] notification-service giao đúng một lần cho mỗi recipient; redelivery không
       gửi trùng.
 - [ ] Webhook fail → key idempotency được nhả và retry thực sự gửi lại (bug gốc đã
