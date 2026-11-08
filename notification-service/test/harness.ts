@@ -6,7 +6,6 @@ import { AppModule } from '../src/app.module';
 import { CONFIG, loadConfig, NotificationConfig } from '../src/config';
 import { MessageCreatedEvent } from '../src/broker/event.schema';
 import { BrokerService } from '../src/broker/broker.service';
-import { REDIS } from '../src/redis/redis.module';
 import { cleanRedis } from './redis-cleanup';
 import { resetBroker, withChannel } from './broker';
 import { startWebhookSink, WebhookSink } from './webhook-sink';
@@ -68,7 +67,8 @@ export async function createHarness(overrides: Partial<NotificationConfig> = {})
     .overrideProvider(CONFIG)
     .useValue(config)
     .compile();
-  const redis = moduleRef.get<Redis>(REDIS);
+  // Independent client for assertions: the app's own client is closed by closeApp().
+  const redis = new Redis(config.redisUrl);
   await cleanRedis(redis);
   await moduleRef.init();
 
@@ -112,6 +112,7 @@ export async function createHarness(overrides: Partial<NotificationConfig> = {})
     closeApp,
     close: async () => {
       await closeApp();
+      await redis.quit();
       await sink.close();
       await resetBroker(url);
     },
