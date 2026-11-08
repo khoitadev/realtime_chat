@@ -1,25 +1,34 @@
 import { randomUUID } from 'crypto';
-import { Test } from '@nestjs/testing';
+import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import Redis from 'ioredis';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS } from '../redis/redis.constants';
 import { cleanDatabase } from '../../test/db-cleanup';
+import { MessagingModule } from '../messaging/messaging.module';
+import { EventPublisher } from '../messaging/event.publisher';
+import { listenForEvents, resetExchange, EventListener } from '../../test/amqp';
+import { waitFor } from '../../test/helpers';
 
 describe('RoomsService', () => {
   let roomsService: RoomsService;
   let prisma: PrismaService;
   let injectedRedis: Redis;
+  let publisher: EventPublisher;
+  let moduleRef: TestingModule;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
+    moduleRef = await Test.createTestingModule({
+      imports: [MessagingModule],
       providers: [
         RoomsService,
         PrismaService,
         { provide: REDIS, useFactory: () => new Redis(process.env.REDIS_URL!) },
       ],
     }).compile();
+    await moduleRef.init();
+    publisher = moduleRef.get(EventPublisher);
 
     roomsService = moduleRef.get(RoomsService);
     prisma = moduleRef.get(PrismaService);
@@ -30,6 +39,7 @@ describe('RoomsService', () => {
   afterAll(async () => {
     await prisma.$disconnect();
     await injectedRedis.quit();
+    await moduleRef.close();
   });
 
   beforeEach(async () => {
@@ -286,6 +296,112 @@ describe('RoomsService', () => {
       expect(await roomsService.listRoomIdsOf('00000000-0000-0000-0000-000000000000')).toEqual([]);
     });
   });
+
+  describe('message.created event', () => {
+    let listener: EventListener;
+
+    beforeEach(async () => {
+      await resetExchange();
+      await new Promise((r) => setTimeout(r, 50));
+      listener = await listenForEvents();
+    });
+
+    afterEach(async () => {
+      await listener.close();
+    });
+
+    it('publishes one event with the other members as recipients and the given correlation id', async () => {
+      const sender = await createUser('ev-sender@example.com');
+      const a = await createUser('ev-a@example.com');
+      const b = await createUser('ev-b@example.com');
+      const room = await roomsService.createRoom(sender.id, { name: 'Ev' });
+      await roomsService.joinRoom(a.id, room.id);
+      await roomsService.joinRoom(b.id, room.id);
+
+      const message = await roomsService.sendMessage(
+        sender.id,
+        room.id,
+        { content: 'hi everyone' },
+        'corr-abc',
+      );
+
+      await waitFor(() => listener.messages.length === 1);
+      const event = JSON.parse(listener.messages[0].content.toString());
+      expect(event).toMatchObject({
+        type: 'message.created',
+        version: 1,
+        correlationId: 'corr-abc',
+        data: { messageId: message.id, roomId: room.id, senderId: sender.id, preview: 'hi everyone' },
+      });
+      expect(event.data.recipientIds.sort()).toEqual([a.id, b.id].sort());
+      expect(event.data.recipientIds).not.toContain(sender.id);
+    });
+
+    it('generates a correlation id when none is given', async () => {
+      const sender = await createUser('ev-gen@example.com');
+      const other = await createUser('ev-gen2@example.com');
+      const room = await roomsService.createRoom(sender.id, { name: 'Gen' });
+      await roomsService.joinRoom(other.id, room.id);
+
+      await roomsService.sendMessage(sender.id, room.id, { content: 'x' });
+
+      await waitFor(() => listener.messages.length === 1);
+      const event = JSON.parse(listener.messages[0].content.toString());
+      expect(event.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
+    it('cuts a long message preview at 100 characters', async () => {
+      const sender = await createUser('ev-long@example.com');
+      const other = await createUser('ev-long2@example.com');
+      const room = await roomsService.createRoom(sender.id, { name: 'Long' });
+      await roomsService.joinRoom(other.id, room.id);
+
+      await roomsService.sendMessage(sender.id, room.id, { content: 'a'.repeat(300) });
+
+      await waitFor(() => listener.messages.length === 1);
+      const event = JSON.parse(listener.messages[0].content.toString());
+      expect(event.data.preview).toBe('a'.repeat(100));
+    });
+
+    it('publishes nothing when the sender is the only member', async () => {
+      const sender = await createUser('ev-solo@example.com');
+      const room = await roomsService.createRoom(sender.id, { name: 'Solo' });
+
+      await roomsService.sendMessage(sender.id, room.id, { content: 'alone' });
+
+      await new Promise((r) => setTimeout(r, 400));
+      expect(listener.messages).toHaveLength(0);
+    });
+
+    it('does not publish when the sender is not a member (send is rejected)', async () => {
+      const owner = await createUser('ev-owner@example.com');
+      const outsider = await createUser('ev-out@example.com');
+      const room = await roomsService.createRoom(owner.id, { name: 'Closed' });
+
+      await expect(
+        roomsService.sendMessage(outsider.id, room.id, { content: 'nope' }),
+      ).rejects.toThrow(ForbiddenException);
+
+      await new Promise((r) => setTimeout(r, 300));
+      expect(listener.messages).toHaveLength(0);
+    });
+
+    it('still saves and returns the message when the broker is unavailable', async () => {
+      const sender = await createUser('ev-down@example.com');
+      const other = await createUser('ev-down2@example.com');
+      const room = await roomsService.createRoom(sender.id, { name: 'Down' });
+      await roomsService.joinRoom(other.id, room.id);
+      const before = { ...publisher.stats };
+      // Simulate an unavailable broker: the publisher has no channel.
+      (publisher as unknown as { channel: undefined }).channel = undefined;
+
+      const message = await roomsService.sendMessage(sender.id, room.id, { content: 'offline' });
+
+      expect(message.content).toBe('offline');
+      expect(await prisma.message.findUnique({ where: { id: message.id } })).not.toBeNull();
+      await waitFor(() => publisher.stats.skipped === before.skipped + 1);
+    });
+  });
 });
 
 describe('sendMessage Redis publish', () => {
@@ -296,6 +412,7 @@ describe('sendMessage Redis publish', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
+      imports: [MessagingModule],
       providers: [
         RoomsService,
         PrismaService,

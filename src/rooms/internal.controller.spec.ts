@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { InternalController } from './internal.controller';
 import { InternalAuthGuard } from '../auth/internal-auth.guard';
 import { REDIS } from '../redis/redis.constants';
+import { MessagingModule } from '../messaging/messaging.module';
 import { cleanDatabase } from '../../test/db-cleanup';
 
 describe('InternalController', () => {
@@ -21,6 +22,7 @@ describe('InternalController', () => {
   beforeAll(async () => {
     process.env.INTERNAL_SECRET = 'test-internal-secret';
     const moduleRef = await Test.createTestingModule({
+      imports: [MessagingModule],
       controllers: [InternalController],
       providers: [
         RoomsService,

@@ -1,16 +1,22 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Message, Room, RoomMember } from '@prisma/client';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS } from '../redis/redis.constants';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { SendMessageDto } from './dto/send-message.dto';
+import { EventPublisher } from '../messaging/event.publisher';
+import { buildMessageCreatedEvent } from '../messaging/events';
 
 @Injectable()
 export class RoomsService {
+  private readonly logger = new Logger(RoomsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly events: EventPublisher,
   ) {}
 
   async createRoom(userId: string, dto: CreateRoomDto): Promise<Room> {
@@ -73,13 +79,41 @@ export class RoomsService {
     }
   }
 
-  async sendMessage(userId: string, roomId: string, dto: SendMessageDto): Promise<Message> {
+  async sendMessage(
+    userId: string,
+    roomId: string,
+    dto: SendMessageDto,
+    correlationId?: string,
+  ): Promise<Message> {
     await this.assertMember(userId, roomId);
     const message = await this.prisma.message.create({
       data: { roomId, senderId: userId, content: dto.content },
     });
     await this.redis.publish('chat:message:new', JSON.stringify({ roomId, message }));
+    await this.announceMessageCreated(message, correlationId);
     return message;
+  }
+
+  /**
+   * Best-effort `message.created` event for notification-service. Never fails the send and is
+   * not awaited by the caller beyond preparing the event (the publish itself runs in the
+   * background and swallows its own errors).
+   */
+  private async announceMessageCreated(message: Message, correlationId?: string): Promise<void> {
+    try {
+      const memberIds = await this.listMemberIds(message.roomId);
+      const recipientIds = memberIds.filter((id) => id !== message.senderId);
+      if (recipientIds.length === 0) return;
+
+      const event = buildMessageCreatedEvent({
+        message,
+        recipientIds,
+        correlationId: correlationId ?? randomUUID(),
+      });
+      void this.events.publishMessageCreated(event);
+    } catch (err) {
+      this.logger.warn(`could not prepare message.created for ${message.id}: ${(err as Error).message}`);
+    }
   }
 
   async getMessages(

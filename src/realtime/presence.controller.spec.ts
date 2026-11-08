@@ -5,6 +5,7 @@ import { AddressInfo } from 'net';
 import Redis from 'ioredis';
 import { PresenceController } from './presence.controller';
 import { PresenceService } from './presence.service';
+import { MessagingModule } from '../messaging/messaging.module';
 import { RoomsService } from '../rooms/rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -24,7 +25,7 @@ describe('GET /rooms/:roomId/presence', () => {
   beforeAll(async () => {
     await acquireJwksServer();
     const moduleRef = await Test.createTestingModule({
-      imports: [AuthModule],
+      imports: [AuthModule, MessagingModule],
       controllers: [PresenceController],
       providers: [
         RoomsService,

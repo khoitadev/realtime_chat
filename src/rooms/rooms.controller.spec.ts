@@ -4,6 +4,8 @@ import { cleanDatabase } from '../../test/db-cleanup';
 import { signToken } from '../../test/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RoomsService } from './rooms.service';
+import { listenForEvents, resetExchange } from '../../test/amqp';
+import { waitFor } from '../../test/helpers';
 
 describe('POST /rooms/:roomId/messages (HTTP, real guards composed)', () => {
   let app: TestInstance;
@@ -153,6 +155,40 @@ describe('POST /rooms/:roomId/messages (HTTP, real guards composed)', () => {
       });
 
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe('X-Correlation-Id', () => {
+    async function sendWithHeader(headerValue: string) {
+      const sender = randomUUID();
+      const other = randomUUID();
+      const room = await rooms.createRoom(sender, { name: 'Corr room' });
+      await rooms.joinRoom(other, room.id);
+      await resetExchange();
+      await new Promise((r) => setTimeout(r, 50));
+      const listener = await listenForEvents();
+      try {
+        const res = await postMessage(room.id, { content: 'corr test' }, {
+          Authorization: `Bearer ${signToken(sender)}`,
+          'X-Correlation-Id': headerValue,
+        });
+        expect(res.status).toBeLessThan(300);
+        await waitFor(() => listener.messages.length === 1);
+        return JSON.parse(listener.messages[0].content.toString());
+      } finally {
+        await listener.close();
+      }
+    }
+
+    it('propagates a valid X-Correlation-Id into the event', async () => {
+      const event = await sendWithHeader('ctrl-corr-1');
+      expect(event.correlationId).toBe('ctrl-corr-1');
+    });
+
+    it('replaces an invalid X-Correlation-Id with a generated UUID', async () => {
+      const event = await sendWithHeader('bad value with spaces');
+      expect(event.correlationId).not.toBe('bad value with spaces');
+      expect(event.correlationId).toMatch(/^[0-9a-f-]{36}$/);
     });
   });
 });
