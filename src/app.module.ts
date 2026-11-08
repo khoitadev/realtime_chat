@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { PresenceModule } from './realtime/presence.module';
 import { RedisModule } from './redis/redis.module';
+import { MessagingModule } from './messaging/messaging.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { RedisModule } from './redis/redis.module';
     AuthModule,
     RoomsModule,
     PresenceModule,
+    MessagingModule,
   ],
 })
 export class AppModule {}
