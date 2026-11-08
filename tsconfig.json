@@ -18,5 +18,5 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true
   },
-  "exclude": ["node_modules", "dist", "web", "auth-service", "gateway"]
+  "exclude": ["node_modules", "dist", "web", "auth-service", "gateway", "notification-service"]
 }

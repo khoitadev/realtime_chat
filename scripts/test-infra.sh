@@ -23,10 +23,31 @@ if ! redis-cli -p "$REDIS_PORT" ping >/dev/null 2>&1; then
   for _ in $(seq 1 20); do redis-cli -p "$REDIS_PORT" ping >/dev/null 2>&1 && break; sleep 0.25; done
 fi
 
+if ! command -v rabbitmq-server >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y rabbitmq-server >/dev/null
+fi
+if ! rabbitmqctl status >/dev/null 2>&1; then
+  rabbitmq-server -detached >/dev/null 2>&1 || true
+  for _ in $(seq 1 30); do rabbitmqctl await_startup --timeout 5 >/dev/null 2>&1 && break; sleep 2; done
+fi
+rabbitmqctl list_vhosts -q | grep -qx chat_test || rabbitmqctl add_vhost chat_test >/dev/null
+rabbitmqctl list_users -q | awk '{print $1}' | grep -qx chat || rabbitmqctl add_user chat chat >/dev/null
+rabbitmqctl set_permissions -p chat_test chat ".*" ".*" ".*" >/dev/null
+
 if [ ! -f "$ROOT/.env.test" ]; then
   cat > "$ROOT/.env.test" <<ENV
 DATABASE_URL="postgresql://postgres:postgres@localhost:${PG_PORT}/chat_test"
 REDIS_URL="redis://localhost:${REDIS_PORT}/1"
+ENV
+fi
+
+grep -q '^AMQP_URL=' "$ROOT/.env.test" || echo 'AMQP_URL="amqp://chat:chat@localhost:5672/chat_test"' >> "$ROOT/.env.test"
+
+mkdir -p "$ROOT/notification-service"
+if [ ! -f "$ROOT/notification-service/.env.test" ]; then
+  cat > "$ROOT/notification-service/.env.test" <<ENV
+AMQP_URL="amqp://chat:chat@localhost:5672/chat_test"
+REDIS_URL="redis://localhost:${REDIS_PORT}/2"
 ENV
 fi
 
@@ -43,4 +64,4 @@ if [ ! -f "$ROOT/auth-service/.env" ]; then
   } > "$ROOT/auth-service/.env"
 fi
 
-echo "postgres:${PG_PORT} redis:${REDIS_PORT} ready"
+echo "postgres:${PG_PORT} redis:${REDIS_PORT} rabbitmq:5672 ready"

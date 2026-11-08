@@ -44,6 +44,20 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: chat
+      RABBITMQ_DEFAULT_PASS: chat
+      RABBITMQ_DEFAULT_VHOST: chat_test
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 volumes:
   pgdata_dev:
   pgdata_test:
