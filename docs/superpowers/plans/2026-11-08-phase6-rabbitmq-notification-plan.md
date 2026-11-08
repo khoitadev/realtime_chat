@@ -824,7 +824,7 @@ describe('BrokerService', () => {
       });
       await broker.onModuleInit();
 
-      execFileSync('rabbitmqctl', ['close_all_connections', 'test-reconnect']);
+      execFileSync('rabbitmqctl', ['close_all_connections', '--vhost', 'chat_test', 'test-reconnect']);
 
       await waitFor(() => handled >= 2 && broker!.isReady());
     },
@@ -2120,7 +2120,7 @@ describe('notification-service lifecycle', () => {
       await h.publish(first);
       await waitFor(() => h.sink.requests.length === 1);
 
-      execFileSync('rabbitmqctl', ['close_all_connections', 'lifecycle-test']);
+      execFileSync('rabbitmqctl', ['close_all_connections', '--vhost', 'chat_test', 'lifecycle-test']);
       const broker = h.moduleRef.get(BrokerService);
       await waitFor(() => broker.isReady(), 10000);
 
@@ -2372,7 +2372,7 @@ describe('EventPublisher', () => {
     await p.publishMessageCreated(makeEvent('before'));
     await waitFor(() => listener.messages.length === 1);
 
-    execFileSync('rabbitmqctl', ['close_all_connections', 'publisher-test']);
+    execFileSync('rabbitmqctl', ['close_all_connections', '--vhost', 'chat_test', 'publisher-test']);
     await waitFor(() => !p.isConnected(), 5000).catch(() => undefined);
     await waitFor(() => p.isConnected(), 10000);
     const listener2 = await listenForEvents(); // the old listener's connection was closed too
@@ -3233,7 +3233,7 @@ sleep 2
 check "no extra deliveries afterwards" 3 "$(( $(count) - BEFORE ))"
 
 # 4. Broker restart safety: RabbitMQ drops all connections, new messages still flow
-rabbitmqctl close_all_connections smoke >/dev/null
+rabbitmqctl close_all_connections --vhost chat_test smoke >/dev/null
 sleep 4
 BEFORE=$(count)
 curl -s -o /dev/null -X POST "localhost:3020/rooms/$ROOM/messages" -H "Authorization: Bearer $TA" \
