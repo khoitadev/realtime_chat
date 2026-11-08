@@ -15,19 +15,24 @@ Rulings = technical decisions made without asking (allowed by the task brief). E
 | P6-R5 | At the user's request the outbox variant was tried and then reverted: Phase 6 keeps best-effort publishing with confirms; losing an event on a crash between DB commit and publish is a documented known limitation. | User decision (spec commits 848b701 → revert). |
 | P6-R6 | `sendMessage` does not await the broker publish (fire-and-forget; the publisher swallows and counts its own errors). | A slow or dead broker must never delay or fail a user's message send. |
 | P6-R7 | notification-service tests use Redis db 2; chat-service/gateway keep db 1. | Prevents the flushes of one project's specs from racing with the other's data. |
+| P6-R8 | Task 1: root `npm install amqplib` resolved to 2.x; pinned `^0.10.9` in both projects (root and notification-service). | The API was verified on 0.10 and the installed types are 0.10.8. |
+| P6-R9 | Task 3: `rabbitmqctl close_all_connections` only touches vhost `/` by default; all tests and scripts use `--vhost chat_test`. | Otherwise the command silently closes nothing in the test vhost. |
+| P6-R10 | Task 5: the webhook sink clears pending delay timers on close. | A pending timer was an open handle that kept Jest/the process alive. |
+| P6-R11 | Task 7: the harness uses an independent Redis client for assertions because the app's own client is quit on shutdown; the queue-deleted test waits for `isReady` false->true before publishing (`isReady` stays true until the broker's cancel notification arrives). amqplib 0.10.9 verified to deliver `null` on a server-initiated consumer cancel. | Avoids asserting through a closed client and publishing into the window before the consumer notices the deletion. |
+| P6-R12 | Task 9: `MessagingModule` is imported in `internal.controller.spec` and `presence.controller.spec` and in the second `rooms.service.spec` describe (the publisher stays unconnected there and silently skips). | Those modules now depend on the publisher provider; no broker is needed for them. |
 
 ## Task status
 
 | Task | Status | Notes |
 |---|---|---|
-| 1 RabbitMQ infra + scaffold | pending | |
-| 2 Config + event schema | pending | |
-| 3 Topology + BrokerService | pending | |
-| 4 IdempotencyService | pending | |
-| 5 WebhookClient + sink | pending | |
-| 6 NotificationConsumer | pending | |
-| 7 Bootstrap / shutdown / reconnect | pending | |
-| 8 chat EventPublisher | pending | |
-| 9 sendMessage publishes + correlationId | pending | |
-| 10 gateway correlation id | pending | |
-| 11 Smoke + final verification | pending | |
+| 1 RabbitMQ infra + scaffold | done | |
+| 2 Config + event schema | done | |
+| 3 Topology + BrokerService | done | |
+| 4 IdempotencyService | done | |
+| 5 WebhookClient + sink | done | |
+| 6 NotificationConsumer | done | |
+| 7 Bootstrap / shutdown / reconnect | done | |
+| 8 chat EventPublisher | done | |
+| 9 sendMessage publishes + correlationId | done | |
+| 10 gateway correlation id | done | |
+| 11 Smoke + final verification | done | |

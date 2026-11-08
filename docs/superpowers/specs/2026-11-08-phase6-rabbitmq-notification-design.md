@@ -296,17 +296,17 @@ tắt sink → thấy retry theo tier (TTL ngắn), bật lại → giao thành 
 
 ## Tiêu chí hoàn thành Phase 6
 
-- [ ] `message.created` được publish đúng schema (có `eventId`, `correlationId`,
+- [x] `message.created` được publish đúng schema (có `eventId`, `correlationId`,
       `recipientIds`) cho cả REST và WS; lỗi publish không làm hỏng việc gửi.
-- [ ] notification-service giao đúng một lần cho mỗi recipient; redelivery không
+- [x] notification-service giao đúng một lần cho mỗi recipient; redelivery không
       gửi trùng.
-- [ ] Webhook fail → key idempotency được nhả và retry thực sự gửi lại (bug gốc đã
+- [x] Webhook fail → key idempotency được nhả và retry thực sự gửi lại (bug gốc đã
       tránh).
-- [ ] Retry bền ở broker: 3 bậc TTL (5s/30s/5m, cấu hình được) rồi DLQ; không
+- [x] Retry bền ở broker: 3 bậc TTL (5s/30s/5m, cấu hình được) rồi DLQ; không
       dùng timer trong RAM; retry không làm consumer khác nhận trùng.
-- [ ] `prefetch=1`, xử lý tuần tự, thứ tự lần giao đầu xác định.
-- [ ] `correlationId` xuyên gateway → chat-service → event → webhook.
-- [ ] Event hỏng đi thẳng DLQ; 4xx vĩnh viễn không retry.
-- [ ] Tự kết nối lại khi broker khởi động lại; shutdown êm.
-- [ ] `npx tsc --noEmit` sạch cho mọi project; mọi test của các service pass với
+- [x] `prefetch=1`, xử lý tuần tự, thứ tự lần giao đầu xác định.
+- [x] `correlationId` xuyên gateway → chat-service → event → webhook.
+- [x] Event hỏng đi thẳng DLQ; 4xx vĩnh viễn không retry.
+- [x] Tự kết nối lại khi broker khởi động lại; shutdown êm.
+- [x] `npx tsc --noEmit` sạch cho mọi project; mọi test của các service pass với
       Postgres + Redis + RabbitMQ thật; smoke nhiều process pass.
