@@ -1,5 +1,6 @@
 import { BeforeApplicationShutdown, Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as amqp from 'amqplib';
+import { createHash } from 'crypto';
 import { CONFIG, NotificationConfig } from '../config';
 import { BrokerService } from '../broker/broker.service';
 import { MessageCreatedEvent, parseEvent } from '../broker/event.schema';
@@ -9,11 +10,16 @@ import { WebhookClient } from '../delivery/webhook.client';
 
 type RecipientOutcome = 'done' | 'retry';
 
+/** After this many unexpected processing errors for the same message it is parked in the DLQ. */
+const MAX_UNEXPECTED_FAILURES = 5;
+
 @Injectable()
 export class NotificationConsumer implements OnModuleInit, BeforeApplicationShutdown {
   private readonly logger = new Logger(NotificationConsumer.name);
   private current?: { channel: amqp.ConfirmChannel; tag: string };
-  private inflight?: Promise<void>;
+  // A Set (not one slot): after a reconnect an old handler may still be running next to a new one.
+  private readonly inflight = new Set<Promise<void>>();
+  private readonly unexpectedFailures = new Map<string, number>();
 
   constructor(
     private readonly broker: BrokerService,
@@ -31,7 +37,7 @@ export class NotificationConsumer implements OnModuleInit, BeforeApplicationShut
       await this.current.channel.cancel(this.current.tag).catch(() => undefined);
       this.current = undefined;
     }
-    await this.inflight?.catch(() => undefined);
+    await Promise.allSettled([...this.inflight]);
   }
 
   private async start(channel: amqp.ConfirmChannel): Promise<void> {
@@ -44,9 +50,8 @@ export class NotificationConsumer implements OnModuleInit, BeforeApplicationShut
         void this.broker.restart();
         return;
       }
-      this.inflight = this.handle(channel, msg).finally(() => {
-        this.inflight = undefined;
-      });
+      const task = this.handle(channel, msg).finally(() => this.inflight.delete(task));
+      this.inflight.add(task);
     });
     this.current = { channel, tag: consumerTag };
   }
@@ -71,16 +76,49 @@ export class NotificationConsumer implements OnModuleInit, BeforeApplicationShut
         await this.retryOrPark(channel, msg, event);
       }
       channel.ack(msg);
+      this.unexpectedFailures.delete(this.failureKey(msg));
     } catch (err) {
-      // Unexpected failure (Redis/broker hiccup): give the broker the message back after a pause.
-      this.logger.error(`unexpected failure, requeueing: ${(err as Error).message}`);
-      await new Promise((r) => setTimeout(r, this.config.reconnectDelayMs));
+      await this.onUnexpectedFailure(channel, msg, err as Error);
+    }
+  }
+
+  /**
+   * Unexpected failure (Redis/broker hiccup). The message goes back to the broker after a pause,
+   * but only a bounded number of times: after MAX_UNEXPECTED_FAILURES it is parked in the DLQ
+   * (confirmed publish, then ack) so a persistent fault cannot spin forever at ~1 Hz.
+   */
+  private async onUnexpectedFailure(
+    channel: amqp.ConfirmChannel,
+    msg: amqp.ConsumeMessage,
+    err: Error,
+  ): Promise<void> {
+    const id = this.failureKey(msg);
+    const failures = (this.unexpectedFailures.get(id) ?? 0) + 1;
+    this.logger.error(`unexpected failure #${failures}: ${err.message}`);
+
+    if (failures >= MAX_UNEXPECTED_FAILURES) {
       try {
-        channel.nack(msg, false, true);
+        await this.publishConfirmed(channel, DLQ, msg, { 'x-reason': 'processing-error' });
+        channel.ack(msg);
+        this.unexpectedFailures.delete(id);
+        this.logger.error(`parked message in the DLQ after ${failures} unexpected failures`);
+        return;
       } catch {
-        /* channel already gone: the broker redelivers on its own */
+        /* DLQ publish failed as well: fall through and requeue */
       }
     }
+
+    this.unexpectedFailures.set(id, failures);
+    await new Promise((r) => setTimeout(r, this.config.reconnectDelayMs));
+    try {
+      channel.nack(msg, false, true);
+    } catch {
+      /* channel already gone: the broker redelivers on its own */
+    }
+  }
+
+  private failureKey(msg: amqp.ConsumeMessage): string {
+    return createHash('sha1').update(msg.content).digest('hex');
   }
 
   private async deliverTo(event: MessageCreatedEvent, recipientId: string): Promise<RecipientOutcome> {

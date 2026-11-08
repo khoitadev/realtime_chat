@@ -63,6 +63,14 @@ describe('WebhookClient', () => {
     expect(await client.deliver({ event, recipientId: 'u1' })).toBe(expected);
   });
 
+  it('does not follow redirects: a 3xx is rejected and only one request is made', async () => {
+    sink.setResponder(() => ({ status: 302, location: sink.url + '?again=1' }));
+
+    expect(await client.deliver({ event, recipientId: 'u1' })).toBe('rejected');
+
+    expect(sink.requests).toHaveLength(1);
+  });
+
   it('treats a timeout as retry', async () => {
     sink.setResponder(() => ({ status: 200, delayMs: 800 }));
     expect(await client.deliver({ event, recipientId: 'u1' })).toBe('retry');

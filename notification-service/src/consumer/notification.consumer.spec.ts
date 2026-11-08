@@ -168,6 +168,21 @@ describe('NotificationConsumer', () => {
     expect(counts['notifications.retry.1']).toBe(0);
   });
 
+  it('parks a message in the DLQ after repeated unexpected processing errors instead of looping forever', async () => {
+    h = await createHarness({ reconnectDelayMs: 100 });
+    const event = makeEvent({ recipientIds: ['u1'] });
+    // A key of the wrong Redis type makes the claim's GET fail with a real WRONGTYPE error.
+    await h.redis.hset(key(event.eventId, 'u1'), 'a', 'b');
+
+    await h.publish(event);
+
+    await waitFor(async () => (await h.counts())['notifications.dlq'] === 1, 10000);
+    const [parked] = await h.dlqMessages();
+    expect(parked.properties.headers?.['x-reason']).toBe('processing-error');
+    expect(h.sink.requests).toHaveLength(0);
+    expect((await h.counts())['notifications.work']).toBe(0);
+  });
+
   it('acknowledges an event with no recipients without calling the webhook', async () => {
     h = await createHarness();
 

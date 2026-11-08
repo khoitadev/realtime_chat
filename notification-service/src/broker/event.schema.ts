@@ -18,6 +18,9 @@ export type ParseResult =
   | { ok: false; reason: 'invalid-json' | 'invalid-schema' | 'unsupported-version' };
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+// Same alphabet the producers accept; keeps header/log injection out of everything downstream.
+const isCorrelationId = (v: unknown): v is string =>
+  typeof v === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(v);
 
 export function parseEvent(content: Buffer): ParseResult {
   let raw: unknown;
@@ -43,7 +46,7 @@ export function parseEvent(content: Buffer): ParseResult {
   const valid =
     isNonEmptyString(e.eventId) &&
     typeof e.occurredAt === 'string' &&
-    isNonEmptyString(e.correlationId) &&
+    isCorrelationId(e.correlationId) &&
     typeof data === 'object' &&
     data !== null &&
     isNonEmptyString(data.messageId) &&

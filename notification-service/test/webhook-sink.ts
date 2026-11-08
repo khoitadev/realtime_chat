@@ -12,6 +12,8 @@ export interface SinkResponse {
   status?: number;
   delayMs?: number;
   destroy?: boolean;
+  /** When set, respond with this Location header (use with a 3xx status). */
+  location?: string;
 }
 
 export interface WebhookSink {
@@ -60,6 +62,7 @@ export async function startWebhookSink(): Promise<WebhookSink> {
         return;
       }
       res.statusCode = response.status ?? 200;
+      if (response.location) res.setHeader('Location', response.location);
       res.end('{}');
     });
   });

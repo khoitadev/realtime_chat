@@ -30,6 +30,7 @@ export class WebhookClient {
           senderId: event.data.senderId,
           preview: event.data.preview,
         }),
+        redirect: 'manual', // never follow a redirect to another host; a 3xx counts as rejected
         signal: AbortSignal.timeout(this.config.webhookTimeoutMs),
       });
 

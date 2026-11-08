@@ -77,22 +77,27 @@ export class EventPublisher implements OnModuleInit, OnApplicationShutdown {
           () => reject(new Error(`no broker confirm within ${this.options.confirmTimeoutMs}ms`)),
           this.options.confirmTimeoutMs,
         );
-        channel.publish(
-          EXCHANGE,
-          ROUTING_KEY,
-          Buffer.from(JSON.stringify(event)),
-          {
-            persistent: true,
-            contentType: 'application/json',
-            messageId: event.eventId,
-            headers: { 'x-correlation-id': event.correlationId },
-          },
-          (err) => {
-            clearTimeout(timer);
-            if (err) reject(err);
-            else resolve();
-          },
-        );
+        try {
+          channel.publish(
+            EXCHANGE,
+            ROUTING_KEY,
+            Buffer.from(JSON.stringify(event)),
+            {
+              persistent: true,
+              contentType: 'application/json',
+              messageId: event.eventId,
+              headers: { 'x-correlation-id': event.correlationId },
+            },
+            (err) => {
+              clearTimeout(timer);
+              if (err) reject(err);
+              else resolve();
+            },
+          );
+        } catch (err) {
+          clearTimeout(timer);
+          reject(err);
+        }
       });
       this.stats.published++;
     } catch (err) {
